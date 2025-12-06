@@ -1,8 +1,7 @@
-// src/controllers/authController.js
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const misc = require('../helpers/response');
-const { findUserByEmail, createUser } = require('../models/user');
+const { findUserByEmail, createUser, findUserById } = require('../models/user');
 const { createDefaultProfile } = require('../models/profile');
 
 require('dotenv').config();
@@ -10,7 +9,6 @@ require('dotenv').config();
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = '7d';
 
-// Normalisasi role & specialization dari frontend
 function normalizeRole(role) {
   const allowed = ['CUSTOMER', 'AGENT', 'ADMIN'];
   if (!role) return 'CUSTOMER';
@@ -27,7 +25,6 @@ function normalizeSpecialization(role, specialization) {
 }
 
 module.exports = {
-  // POST /api/v1/auth/register
   register: async (req, res) => {
     try {
       const { name, email, password, role, specialization } = req.body;
@@ -46,7 +43,6 @@ module.exports = {
 
       const passwordHash = await bcrypt.hash(password, 10);
 
-      // 1) buat user
       const newUser = await createUser({
         name,
         email,
@@ -55,12 +51,10 @@ module.exports = {
         specialization: normSpec,
       });
 
-      // 2) buat profile default (tidak wajib gagal kalau profile error kecil)
       try {
         await createDefaultProfile(newUser.id);
       } catch (e) {
         console.error('Failed to create default profile for user', newUser.id, e.message);
-        // tidak di-throw, supaya user tetap berhasil register walau profil gagal
       }
 
       const token = jwt.sign(
@@ -79,7 +73,6 @@ module.exports = {
     }
   },
 
-  // POST /api/v1/auth/login
   login: async (req, res) => {
     try {
       const { email, password } = req.body;
@@ -110,6 +103,30 @@ module.exports = {
 
       return misc.response(res, 200, false, 'Login successfully', {
         token,
+        user: safeUser,
+      });
+    } catch (e) {
+      console.error(e);
+      return misc.response(res, 500, true, e.message || 'Internal server error');
+    }
+  },
+
+  me: async (req, res) => {
+    try {
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return misc.response(res, 401, true, 'Unauthorized');
+      }
+
+      const user = await findUserById(userId);
+      if (!user) {
+        return misc.response(res, 404, true, 'User not found');
+      }
+
+      const { password_hash, ...safeUser } = user;
+
+      return misc.response(res, 200, false, 'OK', {
         user: safeUser,
       });
     } catch (e) {
