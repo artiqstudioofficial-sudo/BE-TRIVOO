@@ -77,7 +77,22 @@ async function findVerificationByUserId(userId) {
   return rows[0] || null;
 }
 
+function updateAgentVerificationStatus(userId, status) {
+  return new Promise((resolve, reject) => {
+    const sql = `
+      UPDATE agent_verifications
+      SET status = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE user_id = ?
+    `;
+    conn.query(sql, [status, userId], (err, result) => {
+      if (err) return reject(err);
+      resolve(result);
+    });
+  });
+}
+
 module.exports = {
   upsertAgentVerification,
   findVerificationByUserId,
+  updateAgentVerificationStatus,
 };
