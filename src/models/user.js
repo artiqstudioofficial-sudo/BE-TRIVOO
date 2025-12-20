@@ -6,7 +6,19 @@ async function findUserByEmail(email) {
 }
 
 async function findUserById(id) {
-  const [rows] = await db.query('SELECT * FROM users WHERE id = ? LIMIT 1', [id]);
+  const [rows] = await db.query(
+    `
+    SELECT 
+    up.avatar_url AS avatar,
+    u.* 
+    FROM users u
+    LEFT JOIN user_profiles up ON up.user_id = u.id
+    WHERE u.id = ?
+    LIMIT 1
+    `,
+    [id],
+  );
+
   return rows[0] || null;
 }
 
