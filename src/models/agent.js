@@ -29,23 +29,11 @@ function normalize_upsert_payload(payload) {
     "TOUR"
   );
 
-  const id_card_number = String(
-    payload.id_card_number ?? payload.idCardNumber ?? ""
-  ).trim();
-  const tax_id = String(payload.tax_id ?? payload.taxId ?? "").trim();
-  const bank_name = String(payload.bank_name ?? payload.bankName ?? "").trim();
-  const bank_account_number = String(
-    payload.bank_account_number ??
-      payload.accountNumber ??
-      payload.bankAccountNumber ??
-      ""
-  ).trim();
-  const bank_account_holder = String(
-    payload.bank_account_holder ??
-      payload.accountHolder ??
-      payload.bankAccountHolder ??
-      ""
-  ).trim();
+  const id_card_number = String(payload.id_card_number).trim();
+  const tax_id = String(payload.tax_id).trim();
+  const bank_name = String(payload.bank_name).trim();
+  const bank_account_number = String(payload.bank_account_number).trim();
+  const bank_account_holder = String(payload.bank_account_holder).trim();
 
   if (!id_card_number) throw new Error("id_card_number is required");
   if (!tax_id) throw new Error("tax_id is required");
@@ -53,9 +41,8 @@ function normalize_upsert_payload(payload) {
   if (!bank_account_number) throw new Error("bank_account_number is required");
   if (!bank_account_holder) throw new Error("bank_account_holder is required");
 
-  const company_name = payload.company_name ?? payload.companyName ?? null;
-  const id_document_url =
-    payload.id_document_url ?? payload.documentUrl ?? null;
+  const company_name = payload.company_name;
+  const id_document_url = payload.id_document_url;
 
   return {
     user_id: uid,
@@ -63,11 +50,11 @@ function normalize_upsert_payload(payload) {
     specialization,
     id_card_number,
     tax_id,
-    company_name: company_name ? String(company_name).trim() : null,
+    company_name: company_name,
     bank_name,
     bank_account_number,
     bank_account_holder,
-    id_document_url: id_document_url ? String(id_document_url).trim() : null,
+    id_document_url: id_document_url,
   };
 }
 
@@ -156,7 +143,7 @@ async function update_agent_verification_status(user_id, status) {
 
 async function set_agent_verification_decision({
   user_id,
-  action, // 'APPROVE' | 'REJECT'
+  action,
   reviewed_by = null,
   rejection_reason = null,
 }) {
@@ -250,7 +237,6 @@ async function list_agent_users_with_verification() {
       u.verification_status,
       u.specialization AS user_specialization,
       up.avatar_url AS avatar,
-
       av.id            AS v_id,
       av.user_id       AS v_user_id,
       av.agent_type    AS v_agent_type,
