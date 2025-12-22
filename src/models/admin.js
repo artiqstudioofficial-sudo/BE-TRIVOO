@@ -1,10 +1,5 @@
-// models/admin.js
-const conn = require('../configs/db');
+const conn = require("../configs/db");
 
-/**
- * Ambil semua user dengan role AGENT + info verifikasi (agent_verifications)
- * - verification bisa null kalau belum submit
- */
 async function list_agent_users() {
   const sql = `
     SELECT
@@ -79,9 +74,6 @@ async function list_agent_users() {
   }));
 }
 
-/**
- * Ambil semua user dengan role CUSTOMER
- */
 async function list_customer_users() {
   const sql = `
     SELECT

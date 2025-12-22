@@ -1,14 +1,10 @@
-// models/users.js
-const db = require('../configs/db');
+const db = require("../configs/db");
 
 function to_int(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
 
-/**
- * Cari user berdasarkan email
- */
 async function find_user_by_email(email) {
   if (!email) return null;
 
@@ -19,15 +15,12 @@ async function find_user_by_email(email) {
       WHERE email = ?
       LIMIT 1
     `,
-    [email],
+    [email]
   );
 
   return rows[0] || null;
 }
 
-/**
- * Cari user berdasarkan id + avatar dari user_profiles
- */
 async function find_user_by_id(user_id) {
   const uid = to_int(user_id);
   if (!uid || uid <= 0) return null;
@@ -43,16 +36,19 @@ async function find_user_by_id(user_id) {
       WHERE u.id = ?
       LIMIT 1
     `,
-    [uid],
+    [uid]
   );
 
   return rows[0] || null;
 }
 
-/**
- * Create user baru
- */
-async function create_user({ name, email, password_hash, role, specialization = null }) {
+async function create_user({
+  name,
+  email,
+  password_hash,
+  role,
+  specialization = null,
+}) {
   const [result] = await db.query(
     `
       INSERT INTO users (
@@ -64,7 +60,7 @@ async function create_user({ name, email, password_hash, role, specialization = 
       )
       VALUES (?, ?, ?, ?, ?)
     `,
-    [name, email, password_hash, role, specialization],
+    [name, email, password_hash, role, specialization]
   );
 
   const [rows] = await db.query(
@@ -82,17 +78,14 @@ async function create_user({ name, email, password_hash, role, specialization = 
       WHERE id = ?
       LIMIT 1
     `,
-    [result.insertId],
+    [result.insertId]
   );
 
   return rows[0] || null;
 }
 
-/**
- * Update verification_status user
- */
 async function update_verification_status(user_id, status) {
-  const st = String(status || '').toUpperCase();
+  const st = String(status || "").toUpperCase();
 
   const [result] = await db.query(
     `
@@ -100,7 +93,7 @@ async function update_verification_status(user_id, status) {
       SET verification_status = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `,
-    [st, user_id],
+    [st, user_id]
   );
 
   return result;

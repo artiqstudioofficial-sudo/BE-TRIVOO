@@ -1,23 +1,27 @@
-const bcrypt = require('bcryptjs');
-const misc = require('../helpers/response');
+const bcrypt = require("bcryptjs");
+const misc = require("../helpers/response");
 
-const { find_user_by_email, create_user, find_user_by_id } = require('../models/user');
+const {
+  find_user_by_email,
+  create_user,
+  find_user_by_id,
+} = require("../models/user");
 
-const { create_default_profile } = require('../models/profile');
+const { create_default_profile } = require("../models/profile");
 
-require('dotenv').config();
+require("dotenv").config();
 
-const ROLE_ALLOWED = new Set(['CUSTOMER', 'AGENT', 'ADMIN']);
-const SPEC_ALLOWED = new Set(['TOUR', 'STAY', 'TRANSPORT']);
+const ROLE_ALLOWED = new Set(["CUSTOMER", "AGENT", "ADMIN"]);
+const SPEC_ALLOWED = new Set(["TOUR", "STAY", "TRANSPORT"]);
 
 function normalize_role(role) {
-  if (!role) return 'CUSTOMER';
+  if (!role) return "CUSTOMER";
   const upper = String(role).toUpperCase();
-  return ROLE_ALLOWED.has(upper) ? upper : 'CUSTOMER';
+  return ROLE_ALLOWED.has(upper) ? upper : "CUSTOMER";
 }
 
 function normalize_specialization(role, specialization) {
-  if (role !== 'AGENT') return null;
+  if (role !== "AGENT") return null;
   if (!specialization) return null;
   const upper = String(specialization).toUpperCase();
   return SPEC_ALLOWED.has(upper) ? upper : null;
@@ -35,25 +39,27 @@ function set_session_user(req, user) {
 
 function to_safe_user(user_row) {
   if (!user_row) return null;
-  // buang field sensitif
-  // eslint-disable-next-line no-unused-vars
   const { password_hash, ...safe_user } = user_row;
   return safe_user;
 }
 
 module.exports = {
-  // POST /api/v1/auth/register
   register: async (req, res) => {
     try {
       const { name, email, password, role, specialization } = req.body || {};
 
       if (!name || !email || !password) {
-        return misc.response(res, 400, true, 'name, email, dan password wajib diisi');
+        return misc.response(
+          res,
+          400,
+          true,
+          "name, email, dan password wajib diisi"
+        );
       }
 
       const existing = await find_user_by_email(email);
       if (existing) {
-        return misc.response(res, 409, true, 'Email sudah terdaftar');
+        return misc.response(res, 409, true, "Email sudah terdaftar");
       }
 
       const norm_role = normalize_role(role);
@@ -69,125 +75,141 @@ module.exports = {
         specialization: norm_spec,
       });
 
-      // optional: auto create profile (tidak bikin register gagal)
       try {
         await create_default_profile(new_user.id);
       } catch (e) {
-        console.error('[PROFILE] create_default_profile failed:', new_user?.id, e?.message);
+        console.error(
+          "[PROFILE] create_default_profile failed:",
+          new_user?.id,
+          e?.message
+        );
       }
 
-      // set session
       set_session_user(req, new_user);
 
-      // pastikan session tersave sebelum response
       req.session.save((err) => {
         if (err) {
-          console.error('[SESSION] save error:', err);
-          return misc.response(res, 500, true, 'Failed to create session');
+          console.error("[SESSION] save error:", err);
+          return misc.response(res, 500, true, "Failed to create session");
         }
 
-        return misc.response(res, 201, false, 'Register successfully', {
+        return misc.response(res, 201, false, "Register successfully", {
           user: req.session.user,
         });
       });
     } catch (e) {
       console.error(e);
-      return misc.response(res, 500, true, e.message || 'Internal server error');
+      return misc.response(
+        res,
+        500,
+        true,
+        e.message || "Internal server error"
+      );
     }
   },
 
-  // POST /api/v1/auth/login
   login: async (req, res) => {
     try {
       const { email, password } = req.body || {};
 
       if (!email || !password) {
-        return misc.response(res, 400, true, 'email dan password wajib diisi');
+        return misc.response(res, 400, true, "email dan password wajib diisi");
       }
 
       const user = await find_user_by_email(email);
       if (!user) {
-        return misc.response(res, 401, true, 'Email atau password salah');
+        return misc.response(res, 401, true, "Email atau password salah");
       }
 
       const match = await bcrypt.compare(password, user.password_hash);
       if (!match) {
-        return misc.response(res, 401, true, 'Email atau password salah');
+        return misc.response(res, 401, true, "Email atau password salah");
       }
 
       if (!user.is_active) {
-        return misc.response(res, 403, true, 'Akun tidak aktif');
+        return misc.response(res, 403, true, "Akun tidak aktif");
       }
 
-      // rotate session id (anti session fixation)
       req.session.regenerate((regen_err) => {
         if (regen_err) {
-          console.error('[SESSION] regenerate error:', regen_err);
-          return misc.response(res, 500, true, 'Failed to create session');
+          console.error("[SESSION] regenerate error:", regen_err);
+          return misc.response(res, 500, true, "Failed to create session");
         }
 
         set_session_user(req, user);
 
         req.session.save((save_err) => {
           if (save_err) {
-            console.error('[SESSION] save error:', save_err);
-            return misc.response(res, 500, true, 'Failed to persist session');
+            console.error("[SESSION] save error:", save_err);
+            return misc.response(res, 500, true, "Failed to persist session");
           }
 
-          return misc.response(res, 200, false, 'Login successfully', {
+          return misc.response(res, 200, false, "Login successfully", {
             user: req.session.user,
           });
         });
       });
     } catch (e) {
       console.error(e);
-      return misc.response(res, 500, true, e.message || 'Internal server error');
+      return misc.response(
+        res,
+        500,
+        true,
+        e.message || "Internal server error"
+      );
     }
   },
 
-  // GET /api/v1/auth/me
   me: async (req, res) => {
     try {
-      // sumber utama: session
       const user_id = req.session?.user?.id || req.user?.id;
 
       if (!user_id) {
-        return misc.response(res, 401, true, 'Unauthorized');
+        return misc.response(res, 401, true, "Unauthorized");
       }
 
       const user = await find_user_by_id(user_id);
       if (!user) {
-        return misc.response(res, 404, true, 'User not found');
+        return misc.response(res, 404, true, "User not found");
       }
 
-      return misc.response(res, 200, false, 'OK', {
+      return misc.response(res, 200, false, "OK", {
         user: to_safe_user(user),
       });
     } catch (e) {
       console.error(e);
-      return misc.response(res, 500, true, e.message || 'Internal server error');
+      return misc.response(
+        res,
+        500,
+        true,
+        e.message || "Internal server error"
+      );
     }
   },
 
   logout: async (req, res) => {
     try {
       if (!req.session) {
-        return misc.response(res, 200, false, 'Logged out');
+        return misc.response(res, 200, false, "Logged out");
       }
 
       req.session.destroy((err) => {
         if (err) {
-          console.error('[SESSION] destroy error:', err);
-          return misc.response(res, 500, true, 'Failed to logout');
+          console.error("[SESSION] destroy error:", err);
+          return misc.response(res, 500, true, "Failed to logout");
         }
 
-        // cookie name harus sama dengan config express-session (misal: name: 'sid')
-        res.clearCookie('sid');
-        return misc.response(res, 200, false, 'Logged out');
+        res.clearCookie("sid");
+        return misc.response(res, 200, false, "Logged out");
       });
     } catch (e) {
       console.error(e);
-      return misc.response(res, 500, true, e.message || 'Internal server error');
+      return misc.response(
+        res,
+        500,
+        true,
+        e.message || "Internal server error"
+      );
     }
   },
 };
