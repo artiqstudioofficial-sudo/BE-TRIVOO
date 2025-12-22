@@ -8,47 +8,55 @@ const AGENT_TYPES = new Set(['INDIVIDUAL', 'CORPORATE']);
 const SPECIALIZATIONS = new Set(['TOUR', 'STAY', 'TRANSPORT']);
 const VERIF_STATUS = new Set(['PENDING', 'APPROVED', 'VERIFIED', 'REJECTED']);
 
-function pickEnum(val, set, fallback) {
+function pick_enum(val, set, fallback) {
   const v = String(val || '').toUpperCase();
   return set.has(v) ? v : fallback;
 }
 
-function normalizeUpsertPayload(data) {
-  if (!data) throw new Error('payload is required');
-  if (!data.userId) throw new Error('userId is required');
+// terima payload camelCase / snake_case, output snake_case
+function normalize_upsert_payload(payload) {
+  if (!payload) throw new Error('payload is required');
 
-  const userId = Number(data.userId);
-  if (!Number.isFinite(userId) || userId <= 0) throw new Error('userId is invalid');
+  // dukung dua gaya input
+  const user_id = payload.user_id ?? payload.userId;
+  if (!user_id) throw new Error('user_id is required');
 
-  const agentType = pickEnum(data.agentType, AGENT_TYPES, 'INDIVIDUAL');
-  const specialization = pickEnum(data.specialization, SPECIALIZATIONS, 'TOUR');
+  const uid = Number(user_id);
+  if (!Number.isFinite(uid) || uid <= 0) throw new Error('user_id is invalid');
 
-  const idCardNumber = String(data.idCardNumber || '').trim();
-  const taxId = String(data.taxId || '').trim();
-  const bankName = String(data.bankName || '').trim();
-  const accountNumber = String(data.accountNumber || '').trim();
-  const accountHolder = String(data.accountHolder || '').trim();
+  const agent_type = pick_enum(payload.agent_type ?? payload.agentType, AGENT_TYPES, 'INDIVIDUAL');
+  const specialization = pick_enum(payload.specialization, SPECIALIZATIONS, 'TOUR');
 
-  if (!idCardNumber) throw new Error('idCardNumber is required');
-  if (!taxId) throw new Error('taxId is required');
-  if (!bankName) throw new Error('bankName is required');
-  if (!accountNumber) throw new Error('accountNumber is required');
-  if (!accountHolder) throw new Error('accountHolder is required');
+  const id_card_number = String(payload.id_card_number ?? payload.idCardNumber ?? '').trim();
+  const tax_id = String(payload.tax_id ?? payload.taxId ?? '').trim();
+  const bank_name = String(payload.bank_name ?? payload.bankName ?? '').trim();
+  const bank_account_number = String(
+    payload.bank_account_number ?? payload.accountNumber ?? payload.bankAccountNumber ?? '',
+  ).trim();
+  const bank_account_holder = String(
+    payload.bank_account_holder ?? payload.accountHolder ?? payload.bankAccountHolder ?? '',
+  ).trim();
 
-  const companyName = data.companyName ? String(data.companyName).trim() : null;
-  const documentUrl = data.documentUrl ? String(data.documentUrl).trim() : null;
+  if (!id_card_number) throw new Error('id_card_number is required');
+  if (!tax_id) throw new Error('tax_id is required');
+  if (!bank_name) throw new Error('bank_name is required');
+  if (!bank_account_number) throw new Error('bank_account_number is required');
+  if (!bank_account_holder) throw new Error('bank_account_holder is required');
+
+  const company_name = payload.company_name ?? payload.companyName ?? null;
+  const id_document_url = payload.id_document_url ?? payload.documentUrl ?? null;
 
   return {
-    userId,
-    agentType,
+    user_id: uid,
+    agent_type,
     specialization,
-    idCardNumber,
-    taxId,
-    companyName,
-    bankName,
-    accountNumber,
-    accountHolder,
-    documentUrl,
+    id_card_number,
+    tax_id,
+    company_name: company_name ? String(company_name).trim() : null,
+    bank_name,
+    bank_account_number,
+    bank_account_holder,
+    id_document_url: id_document_url ? String(id_document_url).trim() : null,
   };
 }
 
@@ -58,8 +66,8 @@ function normalizeUpsertPayload(data) {
  * - status selalu PENDING ketika submit ulang
  * - reset reviewed_by / reviewed_at / rejection_reason
  */
-async function upsertAgentVerification(payload) {
-  const data = normalizeUpsertPayload(payload);
+async function upsert_agent_verification(payload) {
+  const data = normalize_upsert_payload(payload);
 
   const sql = `
     INSERT INTO agent_verifications (
@@ -95,16 +103,16 @@ async function upsertAgentVerification(payload) {
   `;
 
   const params = [
-    data.userId,
-    data.agentType,
+    data.user_id,
+    data.agent_type,
     data.specialization,
-    data.idCardNumber,
-    data.taxId,
-    data.companyName,
-    data.bankName,
-    data.accountNumber,
-    data.accountHolder,
-    data.documentUrl,
+    data.id_card_number,
+    data.tax_id,
+    data.company_name,
+    data.bank_name,
+    data.bank_account_number,
+    data.bank_account_holder,
+    data.id_document_url,
   ];
 
   const [result] = await db.query(sql, params);
@@ -115,10 +123,7 @@ async function upsertAgentVerification(payload) {
  * Ambil verification terbaru user (kalau suatu saat ada multi-row)
  * plus join verification_status dari users
  */
-async function findVerificationByUserId(userId) {
-  const uid = Number(userId);
-  if (!Number.isFinite(uid) || uid <= 0) throw new Error('userId is invalid');
-
+async function find_verification_by_user_id(user_id) {
   const sql = `
     SELECT
       av.*,
@@ -130,7 +135,7 @@ async function findVerificationByUserId(userId) {
     LIMIT 1
   `;
 
-  const [rows] = await db.query(sql, [uid]);
+  const [rows] = await db.query(sql, [user_id]);
   return rows[0] || null;
 }
 
@@ -138,12 +143,8 @@ async function findVerificationByUserId(userId) {
  * Update status agent_verifications saja
  * (biasanya dipanggil internal dalam transaksi yang juga update users.verification_status)
  */
-async function updateAgentVerificationStatus(userId, status) {
-  const uid = Number(userId);
-  if (!Number.isFinite(uid) || uid <= 0) throw new Error('userId is invalid');
-
+async function update_agent_verification_status(user_id, status) {
   const st = String(status || '').toUpperCase();
-  console.log(st);
   if (!VERIF_STATUS.has(st)) throw new Error('Invalid verification status');
 
   const sql = `
@@ -152,7 +153,7 @@ async function updateAgentVerificationStatus(userId, status) {
     WHERE user_id = ?
   `;
 
-  const [result] = await db.query(sql, [st, uid]);
+  const [result] = await db.query(sql, [st, user_id]);
   return result;
 }
 
@@ -161,14 +162,14 @@ async function updateAgentVerificationStatus(userId, status) {
  * - update agent_verifications (status, reviewed_by, reviewed_at, rejection_reason)
  * - update users.verification_status (PENDING/VERIFIED/REJECTED)
  */
-async function setAgentVerificationDecision({
-  userId,
+async function set_agent_verification_decision({
+  user_id,
   action, // 'APPROVE' | 'REJECT'
-  reviewedBy = null,
-  rejectionReason = null,
+  reviewed_by = null,
+  rejection_reason = null,
 }) {
-  const uid = Number(userId);
-  if (!Number.isFinite(uid) || uid <= 0) throw new Error('userId is invalid');
+  const uid = Number(user_id);
+  if (!Number.isFinite(uid) || uid <= 0) throw new Error('user_id is invalid');
 
   const act = String(action || '').toUpperCase();
   if (!['APPROVE', 'REJECT'].includes(act)) throw new Error('action must be APPROVE or REJECT');
@@ -177,14 +178,11 @@ async function setAgentVerificationDecision({
   try {
     await conn.beginTransaction();
 
-    // pastikan verification ada
     const [vrows] = await conn.query(
       `SELECT id FROM agent_verifications WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
       [uid],
     );
-    if (!vrows[0]) {
-      throw new Error('Agent verification not found for this user');
-    }
+    if (!vrows[0]) throw new Error('Agent verification not found for this user');
 
     if (act === 'APPROVE') {
       await conn.query(
@@ -198,7 +196,7 @@ async function setAgentVerificationDecision({
           updated_at = CURRENT_TIMESTAMP
         WHERE user_id = ?
         `,
-        [reviewedBy, uid],
+        [reviewed_by, uid],
       );
 
       await conn.query(
@@ -210,7 +208,7 @@ async function setAgentVerificationDecision({
         [uid],
       );
     } else {
-      const reason = rejectionReason ? String(rejectionReason).trim() : 'Rejected by admin';
+      const reason = rejection_reason ? String(rejection_reason).trim() : 'Rejected by admin';
 
       await conn.query(
         `
@@ -223,7 +221,7 @@ async function setAgentVerificationDecision({
           updated_at = CURRENT_TIMESTAMP
         WHERE user_id = ?
         `,
-        [reviewedBy, reason, uid],
+        [reviewed_by, reason, uid],
       );
 
       await conn.query(
@@ -248,13 +246,9 @@ async function setAgentVerificationDecision({
 
 /**
  * Admin: list semua AGENT lengkap avatar + verification object (bisa null)
- * Output disusun mirip response yang kamu kasih:
- * {
- *   id, name, email, role, avatar, verification_status, specialization,
- *   verification: {...} | null
- * }
+ * Output snake_case
  */
-async function listAgentUsersWithVerification() {
+async function list_agent_users_with_verification() {
   const sql = `
     SELECT
       u.id,
@@ -334,11 +328,11 @@ async function listAgentUsersWithVerification() {
 }
 
 module.exports = {
-  upsertAgentVerification,
-  findVerificationByUserId,
-  updateAgentVerificationStatus,
+  upsert_agent_verification,
+  find_verification_by_user_id,
+  update_agent_verification_status,
 
   // best admin helpers
-  setAgentVerificationDecision,
-  listAgentUsersWithVerification,
+  set_agent_verification_decision,
+  list_agent_users_with_verification,
 };

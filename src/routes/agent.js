@@ -5,12 +5,12 @@ const agentProduct = require('../controllers/agent_product');
 
 const { requireAuth } = require('../middleware/auth');
 
-Route.post('/verification', requireAuth, agent.submitVerification);
-Route.get('/verification', requireAuth, agent.getMyVerification);
+Route.post('/verification', requireAuth, agent.submit_verification);
+Route.get('/verification', requireAuth, agent.get_my_verification);
 
-Route.get('/products', agentProduct.listMyProducts);
-Route.get('/products/:id', agentProduct.getMyProduct);
-Route.post('/products', agentProduct.createMyProduct);
-Route.put('/products/:id', agentProduct.updateMyProduct);
+Route.get('/products', requireAuth, agentProduct.list_my_products);
+Route.get('/products/:id', requireAuth, agentProduct.get_my_product);
+Route.post('/products', requireAuth, agentProduct.create_my_product);
+Route.put('/products/:id', requireAuth, agentProduct.update_my_product);
 
 module.exports = Route;
