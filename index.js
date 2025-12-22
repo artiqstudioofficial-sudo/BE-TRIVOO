@@ -6,7 +6,6 @@ const helmet = require("helmet");
 const logger = require("morgan");
 const compression = require("compression");
 const cors = require("cors");
-const fileUpload = require("express-fileupload");
 const cookieParser = require("cookie-parser");
 const session = require("express-session");
 
@@ -21,18 +20,12 @@ app.use(helmet());
 app.use(compression());
 
 app.use(express.static("public"));
-app.use(fileUpload());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(cookieParser());
 
 // ====== CORS (COOKIE SESSION BUTUH ORIGIN SPESIFIK) ======
-const allowedOrigins = [
-  "http://localhost:3000",
-  "http://127.0.0.1:3000",
-  // tambahkan domain produksi FE kamu kalau ada:
-  // "https://homeservice.viniela.id",
-];
+const allowedOrigins = ["http://localhost:3000", "http://127.0.0.1:3000"];
 
 app.use(
   cors({
@@ -125,15 +118,12 @@ app.use(
   })
 );
 
-// ====== ROUTES ======
 app.use("/", routerNav);
 
-// ====== 404 ======
-app.use((req, res) => {
+app.use((_, res) => {
   res.sendStatus(404);
 });
 
-// ====== START ======
 const server = app.listen(port, () => {
   console.log(`\n\t *** Server listening on PORT ${port}  ***`);
 });

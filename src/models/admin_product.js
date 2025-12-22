@@ -1,18 +1,12 @@
-// models/admin_products.js
-const db = require('../configs/db');
+const db = require("../configs/db");
 
-/**
- * Admin: list semua produk milik agent
- * Support:
- *  - owner_id
- *  - q (search name/location)
- *  - page, limit
- */
 async function list_agent_products_admin(params = {}) {
   const owner_id = params.owner_id ? Number(params.owner_id) : null;
-  const q = params.q ? String(params.q).trim() : '';
+  const q = params.q ? String(params.q).trim() : "";
   const page = params.page ? Math.max(1, Number(params.page)) : 1;
-  const limit = params.limit ? Math.min(100, Math.max(1, Number(params.limit))) : 20;
+  const limit = params.limit
+    ? Math.min(100, Math.max(1, Number(params.limit)))
+    : 20;
   const offset = (page - 1) * limit;
 
   const where = [`u.role = 'AGENT'`];
@@ -28,9 +22,8 @@ async function list_agent_products_admin(params = {}) {
     values.push(`%${q}%`, `%${q}%`);
   }
 
-  const where_sql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const where_sql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-  // ===== total count =====
   const count_sql = `
     SELECT COUNT(DISTINCT p.id) AS total
     FROM products p
@@ -41,7 +34,6 @@ async function list_agent_products_admin(params = {}) {
   const [count_rows] = await db.query(count_sql, values);
   const total = Number(count_rows?.[0]?.total || 0);
 
-  // ===== list data =====
   const sql = `
     SELECT
       p.id,
@@ -122,16 +114,14 @@ async function list_agent_products_admin(params = {}) {
   };
 }
 
-/* ================= helpers ================= */
-
 function split_gallery(v) {
   if (!v) return [];
-  return String(v).split('||').filter(Boolean);
+  return String(v).split("||").filter(Boolean);
 }
 
 function safe_json_array(v) {
   if (Array.isArray(v)) return v;
-  if (v == null || v === '') return [];
+  if (v == null || v === "") return [];
   try {
     const parsed = JSON.parse(v);
     return Array.isArray(parsed) ? parsed : [];
@@ -141,8 +131,8 @@ function safe_json_array(v) {
 }
 
 function safe_json_object(v) {
-  if (v == null || v === '') return null;
-  if (typeof v === 'object') return v;
+  if (v == null || v === "") return null;
+  if (typeof v === "object") return v;
   try {
     return JSON.parse(v);
   } catch {

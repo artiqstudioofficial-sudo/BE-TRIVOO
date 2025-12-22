@@ -1,16 +1,13 @@
-// models/product.js
-const conn = require('../configs/db');
+const conn = require("../configs/db");
 
-/**
- * Helper kecil untuk query dengan Promise
- */
-function query(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    conn.query(sql, params, (err, rows) => {
-      if (err) return reject(err);
-      resolve(rows);
-    });
-  });
+async function query(sql, params = []) {
+  try {
+    const [rows] = await conn.execute(sql, params);
+    return rows;
+  } catch (err) {
+    err.message = `${err.message}\nSQL: ${sql}`;
+    throw err;
+  }
 }
 
 function safe_parse_json(value, fallback) {
@@ -22,9 +19,6 @@ function safe_parse_json(value, fallback) {
   }
 }
 
-/**
- * Ambil satu product row mentah (tanpa images/blocked_dates)
- */
 async function find_product_row_by_id(product_id) {
   const rows = await query(
     `
@@ -34,15 +28,12 @@ async function find_product_row_by_id(product_id) {
       WHERE p.id = ?
       LIMIT 1
     `,
-    [product_id],
+    [product_id]
   );
 
   return rows[0] || null;
 }
 
-/**
- * Ambil semua gallery images untuk product
- */
 async function find_product_images(product_id) {
   const rows = await query(
     `
@@ -52,15 +43,12 @@ async function find_product_images(product_id) {
       WHERE product_id = ?
       ORDER BY sort_order ASC, id ASC
     `,
-    [product_id],
+    [product_id]
   );
 
   return rows.map((r) => r.image_url);
 }
 
-/**
- * Ambil semua blocked dates untuk product
- */
 async function find_product_blocked_dates(product_id) {
   const rows = await query(
     `
@@ -70,15 +58,12 @@ async function find_product_blocked_dates(product_id) {
       WHERE product_id = ?
       ORDER BY blocked_date ASC
     `,
-    [product_id],
+    [product_id]
   );
 
   return rows.map((r) => r.blocked_date);
 }
 
-/**
- * Map row + images + blocked_dates ke shape API snake_case
- */
 async function build_product_response(row) {
   if (!row) return null;
 
@@ -109,15 +94,6 @@ async function build_product_response(row) {
   };
 }
 
-/**
- * Create product baru
- * payload snake_case:
- * {
- *   owner_id, category_id, name, description, price, currency,
- *   location, image, images, features, details, daily_capacity,
- *   blocked_dates
- * }
- */
 async function create_product(payload) {
   const result = await query(
     `
@@ -143,17 +119,16 @@ async function create_product(payload) {
       payload.price,
       payload.currency,
       payload.location,
-      payload.image,
+      payload.image_url,
       payload.features ? JSON.stringify(payload.features) : null,
       payload.details ? JSON.stringify(payload.details) : null,
-      payload.daily_capacity || 10,
-    ],
+      payload.daily_capacity,
+    ]
   );
 
   const product_id = result.insertId;
 
-  // Gallery images
-  if (Array.isArray(payload.images) && payload.images.length > 0) {
+  if (payload.images.length > 0) {
     for (let i = 0; i < payload.images.length; i += 1) {
       const img = payload.images[i];
       await query(
@@ -161,20 +136,19 @@ async function create_product(payload) {
           INSERT INTO product_images (product_id, image_url, sort_order)
           VALUES (?,?,?)
         `,
-        [product_id, img, i],
+        [product_id, img, i]
       );
     }
   }
 
-  // Blocked dates
-  if (Array.isArray(payload.blocked_dates) && payload.blocked_dates.length > 0) {
+  if (payload.blocked_dates.length > 0) {
     for (const date of payload.blocked_dates) {
       await query(
         `
           INSERT IGNORE INTO product_blocked_dates (product_id, blocked_date)
           VALUES (?,?)
         `,
-        [product_id, date],
+        [product_id, date]
       );
     }
   }
@@ -183,16 +157,13 @@ async function create_product(payload) {
   return build_product_response(row);
 }
 
-/**
- * Update product milik owner tertentu
- */
 async function update_product(product_id, owner_id, payload) {
   const existing = await find_product_row_by_id(product_id);
   if (!existing) return null;
 
   if (Number(existing.owner_id) !== Number(owner_id)) {
-    const err = new Error('Forbidden');
-    err.code = 'FORBIDDEN';
+    const err = new Error("Forbidden");
+    err.code = "FORBIDDEN";
     throw err;
   }
 
@@ -226,10 +197,9 @@ async function update_product(product_id, owner_id, payload) {
       payload.daily_capacity || 10,
       product_id,
       owner_id,
-    ],
+    ]
   );
 
-  // Refresh gallery
   await query(`DELETE FROM product_images WHERE product_id = ?`, [product_id]);
   if (Array.isArray(payload.images) && payload.images.length > 0) {
     for (let i = 0; i < payload.images.length; i += 1) {
@@ -239,21 +209,25 @@ async function update_product(product_id, owner_id, payload) {
           INSERT INTO product_images (product_id, image_url, sort_order)
           VALUES (?,?,?)
         `,
-        [product_id, img, i],
+        [product_id, img, i]
       );
     }
   }
 
-  // Refresh blocked dates
-  await query(`DELETE FROM product_blocked_dates WHERE product_id = ?`, [product_id]);
-  if (Array.isArray(payload.blocked_dates) && payload.blocked_dates.length > 0) {
+  await query(`DELETE FROM product_blocked_dates WHERE product_id = ?`, [
+    product_id,
+  ]);
+  if (
+    Array.isArray(payload.blocked_dates) &&
+    payload.blocked_dates.length > 0
+  ) {
     for (const date of payload.blocked_dates) {
       await query(
         `
           INSERT IGNORE INTO product_blocked_dates (product_id, blocked_date)
           VALUES (?,?)
         `,
-        [product_id, date],
+        [product_id, date]
       );
     }
   }
@@ -262,9 +236,6 @@ async function update_product(product_id, owner_id, payload) {
   return build_product_response(row);
 }
 
-/**
- * Ambil product milik owner tertentu (buat edit)
- */
 async function get_product_by_id_for_owner(product_id, owner_id) {
   const row = await find_product_row_by_id(product_id);
   if (!row) return null;
@@ -272,10 +243,6 @@ async function get_product_by_id_for_owner(product_id, owner_id) {
   return build_product_response(row);
 }
 
-/**
- * List semua product milik owner tertentu
- * (buat /agent/products)
- */
 async function list_products_by_owner(owner_id) {
   const rows = await query(
     `
@@ -297,10 +264,9 @@ async function list_products_by_owner(owner_id) {
       WHERE p.owner_id = ?
       ORDER BY p.created_at DESC
     `,
-    [owner_id],
+    [owner_id]
   );
 
-  // tetep snake_case
   return rows.map((row) => ({
     id: row.id,
     owner_id: row.owner_id,
@@ -318,9 +284,239 @@ async function list_products_by_owner(owner_id) {
   }));
 }
 
+// ==============================
+// PRODUCT IMAGES API (ADDED)
+// ==============================
+
+async function ensure_owned_product(product_id, owner_id) {
+  const existing = await find_product_row_by_id(product_id);
+  if (!existing) return null;
+
+  if (Number(existing.owner_id) !== Number(owner_id)) {
+    const err = new Error("Forbidden");
+    err.code = "FORBIDDEN";
+    throw err;
+  }
+
+  return existing;
+}
+
+async function list_product_images_for_owner(product_id, owner_id) {
+  await ensure_owned_product(product_id, owner_id);
+
+  const rows = await query(
+    `
+      SELECT
+        id,
+        product_id,
+        image_url,
+        sort_order,
+        created_at
+      FROM product_images
+      WHERE product_id = ?
+      ORDER BY sort_order ASC, id ASC
+    `,
+    [product_id]
+  );
+
+  return rows || [];
+}
+
+async function add_product_image_for_owner(product_id, owner_id, payload) {
+  await ensure_owned_product(product_id, owner_id);
+
+  const image_url =
+    typeof payload?.image_url === "string" ? payload.image_url.trim() : "";
+  const sort_order =
+    typeof payload?.sort_order === "number" &&
+    Number.isFinite(payload.sort_order)
+      ? payload.sort_order
+      : 0;
+
+  if (!image_url) {
+    const err = new Error("image_url is required");
+    err.code = "VALIDATION";
+    throw err;
+  }
+
+  const result = await query(
+    `
+      INSERT INTO product_images (product_id, image_url, sort_order)
+      VALUES (?,?,?)
+    `,
+    [product_id, image_url, sort_order]
+  );
+
+  return {
+    id: result.insertId,
+    product_id,
+    image_url,
+    sort_order,
+  };
+}
+
+async function add_product_images_bulk_for_owner(product_id, owner_id, images) {
+  await ensure_owned_product(product_id, owner_id);
+
+  if (!Array.isArray(images) || images.length === 0) {
+    const err = new Error("images is required");
+    err.code = "VALIDATION";
+    throw err;
+  }
+
+  const inserted = [];
+
+  for (let i = 0; i < images.length; i += 1) {
+    const item = images[i];
+
+    const image_url =
+      typeof item?.image_url === "string" ? item.image_url.trim() : "";
+    const sort_order =
+      typeof item?.sort_order === "number" && Number.isFinite(item.sort_order)
+        ? item.sort_order
+        : i;
+
+    if (!image_url) continue;
+
+    const res = await query(
+      `
+        INSERT INTO product_images (product_id, image_url, sort_order)
+        VALUES (?,?,?)
+      `,
+      [product_id, image_url, sort_order]
+    );
+
+    inserted.push({
+      id: res.insertId,
+      product_id,
+      image_url,
+      sort_order,
+    });
+  }
+
+  return inserted;
+}
+
+async function update_product_image_for_owner(
+  product_id,
+  owner_id,
+  image_id,
+  payload
+) {
+  await ensure_owned_product(product_id, owner_id);
+
+  const id = Number(image_id);
+  if (!id) {
+    const err = new Error("image_id is invalid");
+    err.code = "VALIDATION";
+    throw err;
+  }
+
+  const sets = [];
+  const params = [];
+
+  if (typeof payload?.image_url === "string") {
+    const image_url = payload.image_url.trim();
+    if (!image_url) {
+      const err = new Error("image_url cannot be empty");
+      err.code = "VALIDATION";
+      throw err;
+    }
+    sets.push("image_url = ?");
+    params.push(image_url);
+  }
+
+  if (
+    typeof payload?.sort_order === "number" &&
+    Number.isFinite(payload.sort_order)
+  ) {
+    sets.push("sort_order = ?");
+    params.push(payload.sort_order);
+  }
+
+  if (sets.length === 0) {
+    const err = new Error("No fields to update");
+    err.code = "VALIDATION";
+    throw err;
+  }
+
+  params.push(product_id, id);
+
+  const res = await query(
+    `
+      UPDATE product_images
+      SET ${sets.join(", ")}
+      WHERE product_id = ? AND id = ?
+    `,
+    params
+  );
+
+  return { affected_rows: res.affectedRows || 0 };
+}
+
+async function delete_product_image_for_owner(product_id, owner_id, image_id) {
+  await ensure_owned_product(product_id, owner_id);
+
+  const id = Number(image_id);
+  if (!id) {
+    const err = new Error("image_id is invalid");
+    err.code = "VALIDATION";
+    throw err;
+  }
+
+  const res = await query(
+    `
+      DELETE FROM product_images
+      WHERE product_id = ? AND id = ?
+    `,
+    [product_id, id]
+  );
+
+  return { affected_rows: res.affectedRows || 0 };
+}
+
+async function reorder_product_images_for_owner(product_id, owner_id, order) {
+  await ensure_owned_product(product_id, owner_id);
+
+  if (!Array.isArray(order) || order.length === 0) {
+    const err = new Error("order is required");
+    err.code = "VALIDATION";
+    throw err;
+  }
+
+  let touched = 0;
+
+  // update satu-satu (simple)
+  for (const item of order) {
+    const id = Number(item?.id);
+    const sort_order = Number(item?.sort_order);
+
+    if (!id || !Number.isFinite(sort_order)) continue;
+
+    const res = await query(
+      `
+        UPDATE product_images
+        SET sort_order = ?
+        WHERE product_id = ? AND id = ?
+      `,
+      [sort_order, product_id, id]
+    );
+
+    touched += res.affectedRows || 0;
+  }
+
+  return { affected_rows: touched };
+}
+
 module.exports = {
   create_product,
   update_product,
   get_product_by_id_for_owner,
   list_products_by_owner,
+  list_product_images_for_owner,
+  add_product_image_for_owner,
+  add_product_images_bulk_for_owner,
+  update_product_image_for_owner,
+  delete_product_image_for_owner,
+  reorder_product_images_for_owner,
 };
