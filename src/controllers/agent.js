@@ -1,161 +1,134 @@
-const path = require("path");
-const fs = require("fs");
-const misc = require("../helpers/response");
-const {
-  upsertAgentVerification,
-  findVerificationByUserId,
-} = require("../models/agent");
-const { updateVerificationStatus } = require("../models/user");
+const path = require('path');
+const fs = require('fs');
 
-const UPLOAD_DIR = path.join(
-  __dirname,
-  "..",
-  "public",
-  "uploads",
-  "agent_docs"
-);
+const misc = require('../helpers/response');
+const { upsert_agent_verification, find_verification_by_user_id } = require('../models/agent');
 
-function ensureUploadDir() {
+const { update_verification_status } = require('../models/user');
+
+const UPLOAD_DIR = path.join(__dirname, '..', 'public', 'uploads', 'agent_docs');
+const ALLOWED_EXTS = new Set(['.jpg', '.jpeg', '.png', '.pdf']);
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
+function ensure_upload_dir() {
   if (!fs.existsSync(UPLOAD_DIR)) {
     fs.mkdirSync(UPLOAD_DIR, { recursive: true });
   }
 }
 
-function normalizeAgentType(type) {
-  const allowed = ["INDIVIDUAL", "CORPORATE"];
-  if (!type) return "INDIVIDUAL";
-  const upper = String(type).toUpperCase();
-  return allowed.includes(upper) ? upper : "INDIVIDUAL";
+function normalize_agent_type(agent_type) {
+  const allowed = new Set(['INDIVIDUAL', 'CORPORATE']);
+  const upper = String(agent_type || 'INDIVIDUAL').toUpperCase();
+  return allowed.has(upper) ? upper : 'INDIVIDUAL';
 }
 
-function normalizeAgentSpecialization(spec) {
-  const allowed = ["TOUR", "STAY", "TRANSPORT"];
-  if (!spec) return "TOUR";
-  const upper = String(spec).toUpperCase();
-  return allowed.includes(upper) ? upper : "TOUR";
+function normalize_agent_specialization(specialization) {
+  const allowed = new Set(['TOUR', 'STAY', 'TRANSPORT']);
+  const upper = String(specialization || 'TOUR').toUpperCase();
+  return allowed.has(upper) ? upper : 'TOUR';
+}
+
+async function handle_optional_document_upload(req, user_id) {
+  if (!req.files || !req.files.id_document) return null;
+
+  ensure_upload_dir();
+
+  const doc_file = req.files.id_document;
+  const ext = path.extname(doc_file.name).toLowerCase();
+
+  if (!ALLOWED_EXTS.has(ext)) {
+    const err = new Error('Format file tidak didukung. Gunakan JPG, PNG, atau PDF');
+    err.status_code = 400;
+    throw err;
+  }
+
+  if (doc_file.size > MAX_FILE_SIZE) {
+    const err = new Error('Ukuran file maksimal 5MB');
+    err.status_code = 400;
+    throw err;
+  }
+
+  const filename = `agent-${user_id}-${Date.now()}${ext}`;
+  const dest_path = path.join(UPLOAD_DIR, filename);
+
+  await doc_file.mv(dest_path);
+
+  return `/uploads/agent_docs/${filename}`;
 }
 
 module.exports = {
-  submitVerification: async (req, res) => {
+  // POST /api/v1/agent/verification
+  submit_verification: async (req, res) => {
     try {
-      // ✅ session-based user id (requireAuth harus sudah jalan)
-      const userId = req.session?.user?.id || req.user?.id;
-      if (!userId) {
-        return misc.response(res, 401, true, "Unauthorized");
-      }
+      const user_id = req.session?.user?.id;
+      if (!user_id) return misc.response(res, 401, true, 'Unauthorized');
 
       const {
-        type,
-        idCardNumber,
-        taxId,
-        companyName,
-        bankName,
-        accountNumber,
-        accountHolder,
+        agent_type,
+        id_card_number,
+        tax_id,
+        company_name,
+        bank_name,
+        bank_account_number,
+        bank_account_holder,
         specialization,
       } = req.body;
 
       if (
-        !idCardNumber ||
-        !taxId ||
-        !bankName ||
-        !accountNumber ||
-        !accountHolder
+        !id_card_number ||
+        !tax_id ||
+        !bank_name ||
+        !bank_account_number ||
+        !bank_account_holder
       ) {
-        return misc.response(res, 400, true, "Semua field wajib diisi");
+        return misc.response(res, 400, true, 'Semua field wajib diisi');
       }
 
-      const normType = normalizeAgentType(type);
-      const normSpec = normalizeAgentSpecialization(specialization);
+      const norm_agent_type = normalize_agent_type(agent_type);
+      const norm_specialization = normalize_agent_specialization(specialization);
 
-      let documentUrl; // penting: biar kalau gak upload, tidak overwrite doc lama (tergantung logic model)
-
-      // ==== HANDLE FILE (optional) ====
-      if (req.files && req.files.idDocument) {
-        ensureUploadDir();
-
-        const docFile = req.files.idDocument;
-        const ext = path.extname(docFile.name).toLowerCase();
-        const allowedExts = [".jpg", ".jpeg", ".png", ".pdf"];
-
-        if (!allowedExts.includes(ext)) {
-          return misc.response(
-            res,
-            400,
-            true,
-            "Format file tidak didukung. Gunakan JPG, PNG, atau PDF"
-          );
-        }
-
-        // limit 5MB
-        const maxSize = 5 * 1024 * 1024;
-        if (docFile.size > maxSize) {
-          return misc.response(res, 400, true, "Ukuran file maksimal 5MB");
-        }
-
-        const filename = `agent-${userId}-${Date.now()}${ext}`;
-        const destPath = path.join(UPLOAD_DIR, filename);
-
-        await docFile.mv(destPath);
-
-        // accessible karena public di-static
-        documentUrl = `/uploads/agent_docs/${filename}`;
+      // file optional
+      let id_document_url = null;
+      try {
+        id_document_url = await handle_optional_document_upload(req, user_id);
+      } catch (e) {
+        return misc.response(res, e.status_code || 500, true, e.message || 'Upload failed');
       }
 
-      // ✅ upsert
-      // NOTE: kalau upsertAgentVerification kamu meng-overwrite document_url ketika null/undefined,
-      // pastikan di model: hanya update document_url kalau value-nya ada.
-      await upsertAgentVerification({
-        userId,
-        agentType: normType,
-        specialization: normSpec,
-        idCardNumber,
-        taxId,
-        companyName,
-        bankName,
-        accountNumber,
-        accountHolder,
-        // hanya set kalau ada upload (undefined aman)
-        ...(documentUrl ? { documentUrl } : {}),
-      });
+      const payload = {
+        user_id,
+        agent_type: norm_agent_type,
+        specialization: norm_specialization,
+        id_card_number,
+        tax_id,
+        company_name: company_name ? String(company_name).trim() : null,
+        bank_name,
+        bank_account_number,
+        bank_account_holder,
+        ...(id_document_url ? { id_document_url } : {}),
+      };
 
-      await updateVerificationStatus(userId, "PENDING");
+      await upsert_agent_verification(payload);
 
-      return misc.response(
-        res,
-        200,
-        false,
-        "Verification submitted, status PENDING"
-      );
+      await update_verification_status(user_id, 'PENDING');
+
+      return misc.response(res, 200, false, 'Verification submitted, status PENDING');
     } catch (e) {
       console.error(e);
-      return misc.response(
-        res,
-        500,
-        true,
-        e.message || "Internal server error"
-      );
+      return misc.response(res, 500, true, e.message || 'Internal server error');
     }
   },
 
-  getMyVerification: async (req, res) => {
+  get_my_verification: async (req, res) => {
     try {
-      const userId = req.session?.user?.id || req.user?.id;
-      if (!userId) {
-        return misc.response(res, 401, true, "Unauthorized");
-      }
+      const user_id = req.session?.user?.id;
+      if (!user_id) return misc.response(res, 401, true, 'Unauthorized');
 
-      const verification = await findVerificationByUserId(userId);
-
-      return misc.response(res, 200, false, "OK", verification);
+      const verification = await find_verification_by_user_id(user_id);
+      return misc.response(res, 200, false, 'OK', verification);
     } catch (e) {
       console.error(e);
-      return misc.response(
-        res,
-        500,
-        true,
-        e.message || "Internal server error"
-      );
+      return misc.response(res, 500, true, e.message || 'Internal server error');
     }
   },
 };

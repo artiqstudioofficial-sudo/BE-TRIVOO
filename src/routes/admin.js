@@ -2,15 +2,17 @@
 const express = require('express');
 const Route = express.Router();
 
-const adminController = require('../controllers/admin');
+const admin = require('../controllers/admin');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 
 Route.use(requireAuth, requireAdmin);
 
-Route.get('/users/agents', adminController.listAgents);
+Route.get('/users/agents', admin.list_agents);
 
-Route.get('/users/customers', adminController.listCustomers);
+Route.get('/users/customers', admin.list_customers);
 
-Route.post('/agents/:userId/verification', adminController.updateAgentVerification);
+Route.post('/agents/:user_id/verification', admin.update_agent_verification);
+
+Route.get('/agents/products', admin.list_agent_products);
 
 module.exports = Route;

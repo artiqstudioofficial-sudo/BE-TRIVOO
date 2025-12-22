@@ -1,59 +1,80 @@
-// controllers/agentProduct.js
 const misc = require('../helpers/response');
 const {
-  createProduct,
-  updateProduct,
-  getProductByIdForOwner,
-  listProductsByOwner,
+  create_product,
+  update_product,
+  get_product_by_id_for_owner,
+  list_products_by_owner,
 } = require('../models/product');
 
-function ensureAgent(req) {
-  if (!req.user) {
-    const err = new Error('Unauthorized');
-    err.statusCode = 401;
-    throw err;
-  }
-  if (req.user.role !== 'AGENT') {
-    const err = new Error('Forbidden');
-    err.statusCode = 403;
-    throw err;
-  }
+// ----------------- session helpers -----------------
+function get_session_user(req) {
+  return req?.session?.user || null;
 }
+
+function ensure_agent(req) {
+  const user = get_session_user(req);
+
+  if (!user) {
+    const err = new Error('Unauthorized');
+    err.status_code = 401;
+    throw err;
+  }
+
+  if (user.role !== 'AGENT') {
+    const err = new Error('Forbidden');
+    err.status_code = 403;
+    throw err;
+  }
+
+  return user;
+}
+
+// ----------------- utils -----------------
+function to_number_or_null(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function to_number_or_default(v, def) {
+  const n = to_number_or_null(v);
+  return n === null ? def : n;
+}
+
+function ensure_array(v) {
+  return Array.isArray(v) ? v : [];
+}
+
+// ----------------- handlers -----------------
 
 /**
  * GET /api/v1/agent/products
- * List semua produk milik agent (owner)
+ * (dulu: /my, sekarang bisa kamu samain aja)
  */
-async function listMyProducts(req, res) {
+async function list_my_products(req, res) {
   try {
-    ensureAgent(req);
-    const ownerId = req.user.id;
-
-    const data = await listProductsByOwner(ownerId);
-
+    const user = ensure_agent(req);
+    const data = await list_products_by_owner(user.id);
     return misc.response(res, 200, false, 'OK', data);
   } catch (e) {
     console.error(e);
-    const status = e.statusCode || 500;
-    return misc.response(res, status, true, e.message || 'Internal server error');
+    return misc.response(res, e.status_code || 500, true, e.message || 'Internal server error');
   }
 }
 
 /**
  * GET /api/v1/agent/products/:id
- * Ambil detail satu product milik agent (buat edit)
  */
-async function getMyProduct(req, res) {
+async function get_my_product(req, res) {
   try {
-    ensureAgent(req);
-    const ownerId = req.user.id;
-    const productId = parseInt(req.params.id, 10);
+    const user = ensure_agent(req);
+    const product_id = Number.parseInt(req.params.id, 10);
 
-    if (!productId || Number.isNaN(productId)) {
-      return misc.response(res, 400, true, 'productId tidak valid');
+    if (!product_id) {
+      return misc.response(res, 400, true, 'product_id tidak valid');
     }
 
-    const product = await getProductByIdForOwner(productId, ownerId);
+    const product = await get_product_by_id_for_owner(product_id, user.id);
     if (!product) {
       return misc.response(res, 404, true, 'Product tidak ditemukan');
     }
@@ -61,115 +82,91 @@ async function getMyProduct(req, res) {
     return misc.response(res, 200, false, 'OK', product);
   } catch (e) {
     console.error(e);
-    const status = e.statusCode || 500;
-    return misc.response(res, status, true, e.message || 'Internal server error');
+    return misc.response(res, e.status_code || 500, true, e.message || 'Internal server error');
   }
 }
 
 /**
  * POST /api/v1/agent/products
- * Create product baru
  */
-async function createMyProduct(req, res) {
+async function create_my_product(req, res) {
   try {
-    ensureAgent(req);
-    const ownerId = req.user.id;
+    const user = ensure_agent(req);
 
     const {
-      categoryId,
+      category_id,
       name,
       description,
       price,
       currency,
       location,
-      image,
+      image_url,
       images,
       features,
       details,
-      dailyCapacity,
-      blockedDates,
-    } = req.body;
+      daily_capacity,
+      blocked_dates,
+    } = req.body || {};
 
-    if (!categoryId || !name || !description || !price || !currency || !location) {
+    if (!category_id || !name || !description || price == null || !currency || !location) {
       return misc.response(res, 400, true, 'Field wajib belum lengkap');
     }
 
     const payload = {
-      ownerId,
-      categoryId: Number(categoryId),
-      name,
-      description,
+      owner_id: user.id,
+      category_id: Number(category_id),
+      name: String(name).trim(),
+      description: String(description).trim(),
       price: Number(price),
-      currency,
-      location,
-      image:
-        image ||
+      currency: String(currency).trim(),
+      location: String(location).trim(),
+      image_url:
+        image_url ||
         'https://images.unsplash.com/photo-1500835556837-99ac94a94552?auto=format&fit=crop&w=800&q=80',
-      images: Array.isArray(images) ? images : [],
-      features: Array.isArray(features) ? features : [],
+      images: ensure_array(images),
+      features: ensure_array(features),
       details: details || null,
-      dailyCapacity: dailyCapacity ? Number(dailyCapacity) : 10,
-      blockedDates: Array.isArray(blockedDates) ? blockedDates : [],
+      daily_capacity: to_number_or_default(daily_capacity, 10),
+      blocked_dates: ensure_array(blocked_dates),
     };
 
-    const product = await createProduct(payload);
-
+    const product = await create_product(payload);
     return misc.response(res, 201, false, 'Product created', product);
   } catch (e) {
     console.error(e);
-    const status = e.statusCode || 500;
-    return misc.response(res, status, true, e.message || 'Internal server error');
+    return misc.response(res, e.status_code || 500, true, e.message || 'Internal server error');
   }
 }
 
 /**
  * PUT /api/v1/agent/products/:id
- * Update product milik agent
  */
-async function updateMyProduct(req, res) {
+async function update_my_product(req, res) {
   try {
-    ensureAgent(req);
-    const ownerId = req.user.id;
-    const productId = parseInt(req.params.id, 10);
+    const user = ensure_agent(req);
+    const product_id = Number.parseInt(req.params.id, 10);
 
-    if (!productId || Number.isNaN(productId)) {
-      return misc.response(res, 400, true, 'productId tidak valid');
+    if (!product_id) {
+      return misc.response(res, 400, true, 'product_id tidak valid');
     }
 
-    const {
-      categoryId,
-      name,
-      description,
-      price,
-      currency,
-      location,
-      image,
-      images,
-      features,
-      details,
-      dailyCapacity,
-      blockedDates,
-    } = req.body;
-
     const payload = {
-      ownerId,
-      categoryId: Number(categoryId),
-      name,
-      description,
-      price: Number(price),
-      currency,
-      location,
-      image:
-        image ||
-        'https://images.unsplash.com/photo-1500835556837-99ac94a94552?auto=format&fit=crop&w=800&q=80',
-      images: Array.isArray(images) ? images : [],
-      features: Array.isArray(features) ? features : [],
-      details: details || null,
-      dailyCapacity: dailyCapacity ? Number(dailyCapacity) : 10,
-      blockedDates: Array.isArray(blockedDates) ? blockedDates : [],
+      owner_id: user.id,
+      category_id: Number(req.body?.category_id),
+      name: req.body?.name,
+      description: req.body?.description,
+      price: Number(req.body?.price),
+      currency: req.body?.currency,
+      location: req.body?.location,
+      image_url: req.body?.image_url,
+      images: ensure_array(req.body?.images),
+      features: ensure_array(req.body?.features),
+      details: req.body?.details || null,
+      daily_capacity: to_number_or_default(req.body?.daily_capacity, 10),
+      blocked_dates: ensure_array(req.body?.blocked_dates),
     };
 
-    const product = await updateProduct(productId, ownerId, payload);
+    const product = await update_product(product_id, user.id, payload);
     if (!product) {
       return misc.response(res, 404, true, 'Product tidak ditemukan');
     }
@@ -177,17 +174,13 @@ async function updateMyProduct(req, res) {
     return misc.response(res, 200, false, 'Product updated', product);
   } catch (e) {
     console.error(e);
-    if (e.code === 'FORBIDDEN') {
-      return misc.response(res, 403, true, 'Tidak boleh mengedit product milik user lain');
-    }
-    const status = e.statusCode || 500;
-    return misc.response(res, status, true, e.message || 'Internal server error');
+    return misc.response(res, e.status_code || 500, true, e.message || 'Internal server error');
   }
 }
 
 module.exports = {
-  listMyProducts,
-  getMyProduct,
-  createMyProduct,
-  updateMyProduct,
+  list_my_products,
+  get_my_product,
+  create_my_product,
+  update_my_product,
 };

@@ -1,9 +1,6 @@
 // models/product.js
 const conn = require('../configs/db');
 
-/**
- * Helper kecil untuk query dengan Promise
- */
 function query(sql, params = []) {
   return new Promise((resolve, reject) => {
     conn.query(sql, params, (err, rows) => {
@@ -13,7 +10,7 @@ function query(sql, params = []) {
   });
 }
 
-function safeParseJSON(value, fallback) {
+function safe_parse_json(value, fallback) {
   if (!value) return fallback;
   try {
     return JSON.parse(value);
@@ -22,10 +19,7 @@ function safeParseJSON(value, fallback) {
   }
 }
 
-/**
- * Ambil satu product row mentah (tanpa images/blocked_dates)
- */
-async function findProductRowById(productId) {
+async function find_product_row_by_id(product_id) {
   const rows = await query(
     `
       SELECT
@@ -34,16 +28,13 @@ async function findProductRowById(productId) {
       WHERE p.id = ?
       LIMIT 1
     `,
-    [productId],
+    [product_id],
   );
 
   return rows[0] || null;
 }
 
-/**
- * Ambil semua gallery images untuk product
- */
-async function findProductImages(productId) {
+async function find_product_images(product_id) {
   const rows = await query(
     `
       SELECT
@@ -52,16 +43,13 @@ async function findProductImages(productId) {
       WHERE product_id = ?
       ORDER BY sort_order ASC, id ASC
     `,
-    [productId],
+    [product_id],
   );
 
   return rows.map((r) => r.image_url);
 }
 
-/**
- * Ambil semua blocked dates untuk product
- */
-async function findProductBlockedDates(productId) {
+async function find_product_blocked_dates(product_id) {
   const rows = await query(
     `
       SELECT
@@ -70,28 +58,25 @@ async function findProductBlockedDates(productId) {
       WHERE product_id = ?
       ORDER BY blocked_date ASC
     `,
-    [productId],
+    [product_id],
   );
 
   return rows.map((r) => r.blocked_date);
 }
 
-/**
- * Map row + images + blockedDates ke shape FE Product
- */
-async function buildProductResponse(row) {
+async function build_product_response(row) {
   if (!row) return null;
 
-  const images = await findProductImages(row.id);
-  const blockedDates = await findProductBlockedDates(row.id);
+  const images = await find_product_images(row.id);
+  const blocked_dates = await find_product_blocked_dates(row.id);
 
-  const features = safeParseJSON(row.features, []);
-  const details = safeParseJSON(row.details, null);
+  const features = safe_parse_json(row.features, []);
+  const details = safe_parse_json(row.details, null);
 
   return {
     id: row.id,
-    ownerId: row.owner_id,
-    categoryId: row.category_id,
+    owner_id: row.owner_id,
+    category_id: row.category_id,
     name: row.name,
     description: row.description,
     price: Number(row.price),
@@ -101,24 +86,22 @@ async function buildProductResponse(row) {
     images,
     features,
     details,
-    dailyCapacity: row.daily_capacity,
-    blockedDates,
+    daily_capacity: row.daily_capacity,
+    blocked_dates,
     rating: row.rating ? Number(row.rating) : 0,
-    isActive: !!row.is_active,
-    createdAt: row.created_at,
+    is_active: !!row.is_active,
+    created_at: row.created_at,
   };
 }
 
 /**
- * Create product baru
- * payload: {
- *   ownerId, categoryId, name, description, price, currency,
- *   location, image, images, features, details, dailyCapacity,
- *   blockedDates
+ * payload snake_case:
+ * {
+ *   owner_id, category_id, name, description, price, currency,
+ *   location, image, images, features, details, daily_capacity, blocked_dates
  * }
  */
-async function createProduct(payload) {
-  // Insert ke products
+async function create_product(payload) {
   const result = await query(
     `
       INSERT INTO products (
@@ -136,8 +119,8 @@ async function createProduct(payload) {
       ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
     `,
     [
-      payload.ownerId,
-      payload.categoryId,
+      payload.owner_id,
+      payload.category_id,
       payload.name,
       payload.description,
       payload.price,
@@ -146,13 +129,12 @@ async function createProduct(payload) {
       payload.image,
       payload.features ? JSON.stringify(payload.features) : null,
       payload.details ? JSON.stringify(payload.details) : null,
-      payload.dailyCapacity || 10,
+      payload.daily_capacity || 10,
     ],
   );
 
-  const productId = result.insertId;
+  const product_id = result.insertId;
 
-  // Gallery images
   if (Array.isArray(payload.images) && payload.images.length > 0) {
     for (let i = 0; i < payload.images.length; i += 1) {
       const img = payload.images[i];
@@ -161,37 +143,32 @@ async function createProduct(payload) {
           INSERT INTO product_images (product_id, image_url, sort_order)
           VALUES (?,?,?)
         `,
-        [productId, img, i],
+        [product_id, img, i],
       );
     }
   }
 
-  // Blocked dates
-  if (Array.isArray(payload.blockedDates) && payload.blockedDates.length > 0) {
-    for (const date of payload.blockedDates) {
+  if (Array.isArray(payload.blocked_dates) && payload.blocked_dates.length > 0) {
+    for (const date of payload.blocked_dates) {
       await query(
         `
           INSERT IGNORE INTO product_blocked_dates (product_id, blocked_date)
           VALUES (?,?)
         `,
-        [productId, date],
+        [product_id, date],
       );
     }
   }
 
-  const row = await findProductRowById(productId);
-  return buildProductResponse(row);
+  const row = await find_product_row_by_id(product_id);
+  return build_product_response(row);
 }
 
-/**
- * Update product milik owner tertentu
- */
-async function updateProduct(productId, ownerId, payload) {
-  // Pastikan product milik owner
-  const existing = await findProductRowById(productId);
+async function update_product(product_id, owner_id, payload) {
+  const existing = await find_product_row_by_id(product_id);
   if (!existing) return null;
-  if (existing.owner_id !== ownerId) {
-    // Bukan punya dia
+
+  if (Number(existing.owner_id) !== Number(owner_id)) {
     const err = new Error('Forbidden');
     err.code = 'FORBIDDEN';
     throw err;
@@ -201,21 +178,21 @@ async function updateProduct(productId, ownerId, payload) {
     `
       UPDATE products
       SET
-        category_id   = ?,
-        name          = ?,
-        description   = ?,
-        price         = ?,
-        currency      = ?,
-        location      = ?,
-        image_url     = ?,
-        features      = ?,
-        details       = ?,
+        category_id    = ?,
+        name           = ?,
+        description    = ?,
+        price          = ?,
+        currency       = ?,
+        location       = ?,
+        image_url      = ?,
+        features       = ?,
+        details        = ?,
         daily_capacity = ?,
-        updated_at    = CURRENT_TIMESTAMP
+        updated_at     = CURRENT_TIMESTAMP
       WHERE id = ? AND owner_id = ?
     `,
     [
-      payload.categoryId,
+      payload.category_id,
       payload.name,
       payload.description,
       payload.price,
@@ -224,14 +201,14 @@ async function updateProduct(productId, ownerId, payload) {
       payload.image,
       payload.features ? JSON.stringify(payload.features) : null,
       payload.details ? JSON.stringify(payload.details) : null,
-      payload.dailyCapacity || 10,
-      productId,
-      ownerId,
+      payload.daily_capacity || 10,
+      product_id,
+      owner_id,
     ],
   );
 
   // Refresh gallery
-  await query(`DELETE FROM product_images WHERE product_id = ?`, [productId]);
+  await query(`DELETE FROM product_images WHERE product_id = ?`, [product_id]);
   if (Array.isArray(payload.images) && payload.images.length > 0) {
     for (let i = 0; i < payload.images.length; i += 1) {
       const img = payload.images[i];
@@ -240,44 +217,37 @@ async function updateProduct(productId, ownerId, payload) {
           INSERT INTO product_images (product_id, image_url, sort_order)
           VALUES (?,?,?)
         `,
-        [productId, img, i],
+        [product_id, img, i],
       );
     }
   }
 
   // Refresh blocked dates
-  await query(`DELETE FROM product_blocked_dates WHERE product_id = ?`, [productId]);
-  if (Array.isArray(payload.blockedDates) && payload.blockedDates.length > 0) {
-    for (const date of payload.blockedDates) {
+  await query(`DELETE FROM product_blocked_dates WHERE product_id = ?`, [product_id]);
+  if (Array.isArray(payload.blocked_dates) && payload.blocked_dates.length > 0) {
+    for (const date of payload.blocked_dates) {
       await query(
         `
           INSERT IGNORE INTO product_blocked_dates (product_id, blocked_date)
           VALUES (?,?)
         `,
-        [productId, date],
+        [product_id, date],
       );
     }
   }
 
-  const row = await findProductRowById(productId);
-  return buildProductResponse(row);
+  const row = await find_product_row_by_id(product_id);
+  return build_product_response(row);
 }
 
-/**
- * Ambil product milik owner tertentu (buat edit)
- */
-async function getProductByIdForOwner(productId, ownerId) {
-  const row = await findProductRowById(productId);
+async function get_product_by_id_for_owner(product_id, owner_id) {
+  const row = await find_product_row_by_id(product_id);
   if (!row) return null;
-  if (row.owner_id !== ownerId) return null;
-  return buildProductResponse(row);
+  if (Number(row.owner_id) !== Number(owner_id)) return null;
+  return build_product_response(row);
 }
 
-/**
- * List semua product milik owner tertentu
- * (bisa dipakai di halaman /agent/products)
- */
-async function listProductsByOwner(ownerId) {
+async function list_products_by_owner(owner_id) {
   const rows = await query(
     `
       SELECT
@@ -298,29 +268,29 @@ async function listProductsByOwner(ownerId) {
       WHERE p.owner_id = ?
       ORDER BY p.created_at DESC
     `,
-    [ownerId],
+    [owner_id],
   );
 
   return rows.map((row) => ({
     id: row.id,
-    ownerId: row.owner_id,
-    categoryId: row.category_id,
+    owner_id: row.owner_id,
+    category_id: row.category_id,
     name: row.name,
     description: row.description,
     price: Number(row.price),
     currency: row.currency,
     location: row.location,
     image: row.image_url,
-    dailyCapacity: row.daily_capacity,
+    daily_capacity: row.daily_capacity,
     rating: row.rating ? Number(row.rating) : 0,
-    isActive: !!row.is_active,
-    createdAt: row.created_at,
+    is_active: !!row.is_active,
+    created_at: row.created_at,
   }));
 }
 
 module.exports = {
-  createProduct,
-  updateProduct,
-  getProductByIdForOwner,
-  listProductsByOwner,
+  create_product,
+  update_product,
+  get_product_by_id_for_owner,
+  list_products_by_owner,
 };
