@@ -1,4 +1,4 @@
-const conn = require("../configs/db");
+const conn = require('../configs/db');
 
 async function query(sql, params = []) {
   try {
@@ -28,7 +28,7 @@ async function find_product_row_by_id(product_id) {
       WHERE p.id = ?
       LIMIT 1
     `,
-    [product_id]
+    [product_id],
   );
 
   return rows[0] || null;
@@ -43,7 +43,7 @@ async function find_product_images(product_id) {
       WHERE product_id = ?
       ORDER BY sort_order ASC, id ASC
     `,
-    [product_id]
+    [product_id],
   );
 
   return rows.map((r) => r.image_url);
@@ -58,7 +58,7 @@ async function find_product_blocked_dates(product_id) {
       WHERE product_id = ?
       ORDER BY blocked_date ASC
     `,
-    [product_id]
+    [product_id],
   );
 
   return rows.map((r) => r.blocked_date);
@@ -123,7 +123,7 @@ async function create_product(payload) {
       payload.features ? JSON.stringify(payload.features) : null,
       payload.details ? JSON.stringify(payload.details) : null,
       payload.daily_capacity,
-    ]
+    ],
   );
 
   const product_id = result.insertId;
@@ -136,7 +136,7 @@ async function create_product(payload) {
           INSERT INTO product_images (product_id, image_url, sort_order)
           VALUES (?,?,?)
         `,
-        [product_id, img, i]
+        [product_id, img, i],
       );
     }
   }
@@ -148,7 +148,7 @@ async function create_product(payload) {
           INSERT IGNORE INTO product_blocked_dates (product_id, blocked_date)
           VALUES (?,?)
         `,
-        [product_id, date]
+        [product_id, date],
       );
     }
   }
@@ -162,8 +162,8 @@ async function update_product(product_id, owner_id, payload) {
   if (!existing) return null;
 
   if (Number(existing.owner_id) !== Number(owner_id)) {
-    const err = new Error("Forbidden");
-    err.code = "FORBIDDEN";
+    const err = new Error('Forbidden');
+    err.code = 'FORBIDDEN';
     throw err;
   }
 
@@ -197,7 +197,7 @@ async function update_product(product_id, owner_id, payload) {
       payload.daily_capacity || 10,
       product_id,
       owner_id,
-    ]
+    ],
   );
 
   await query(`DELETE FROM product_images WHERE product_id = ?`, [product_id]);
@@ -209,25 +209,20 @@ async function update_product(product_id, owner_id, payload) {
           INSERT INTO product_images (product_id, image_url, sort_order)
           VALUES (?,?,?)
         `,
-        [product_id, img, i]
+        [product_id, img, i],
       );
     }
   }
 
-  await query(`DELETE FROM product_blocked_dates WHERE product_id = ?`, [
-    product_id,
-  ]);
-  if (
-    Array.isArray(payload.blocked_dates) &&
-    payload.blocked_dates.length > 0
-  ) {
+  await query(`DELETE FROM product_blocked_dates WHERE product_id = ?`, [product_id]);
+  if (Array.isArray(payload.blocked_dates) && payload.blocked_dates.length > 0) {
     for (const date of payload.blocked_dates) {
       await query(
         `
           INSERT IGNORE INTO product_blocked_dates (product_id, blocked_date)
           VALUES (?,?)
         `,
-        [product_id, date]
+        [product_id, date],
       );
     }
   }
@@ -246,42 +241,81 @@ async function get_product_by_id_for_owner(product_id, owner_id) {
 async function list_products_by_owner(owner_id) {
   const rows = await query(
     `
-      SELECT
-        p.id,
-        p.owner_id,
-        p.category_id,
-        p.name,
-        p.description,
-        p.price,
-        p.currency,
-        p.location,
-        p.image_url,
-        p.daily_capacity,
-        p.rating,
-        p.is_active,
-        p.created_at
-      FROM products p
-      WHERE p.owner_id = ?
-      ORDER BY p.created_at DESC
+    SELECT
+      p.id,
+      p.owner_id,
+      p.category_id,
+      p.name,
+      p.description,
+      p.price,
+      p.currency,
+      p.location,
+      p.image_url,
+      p.daily_capacity,
+      p.rating,
+      p.is_active,
+      p.created_at,
+
+      -- ambil semua images per product, urut sort_order
+      COALESCE(
+        (
+          SELECT JSON_ARRAYAGG(
+            JSON_OBJECT(
+              'id', pi.id,
+              'url', pi.image_url,
+              'sort_order', pi.sort_order,
+              'created_at', pi.created_at
+            )
+          )
+          FROM product_images pi
+          WHERE pi.product_id = p.id
+          ORDER BY pi.sort_order ASC, pi.id ASC
+        ),
+        JSON_ARRAY()
+      ) AS images_json
+
+    FROM products p
+    WHERE p.owner_id = ?
+    ORDER BY p.created_at DESC
     `,
-    [owner_id]
+    [owner_id],
   );
 
-  return rows.map((row) => ({
-    id: row.id,
-    owner_id: row.owner_id,
-    category_id: row.category_id,
-    name: row.name,
-    description: row.description,
-    price: Number(row.price),
-    currency: row.currency,
-    location: row.location,
-    image: row.image_url,
-    daily_capacity: row.daily_capacity,
-    rating: row.rating ? Number(row.rating) : 0,
-    is_active: !!row.is_active,
-    created_at: row.created_at,
-  }));
+  return rows.map((row) => {
+    // mysql2 biasanya sudah balikin object/array kalau tipe JSON,
+    // tapi kadang string. Jadi kita guard:
+    let images = row.images_json;
+    if (typeof images === 'string') {
+      try {
+        images = JSON.parse(images);
+      } catch {
+        images = [];
+      }
+    }
+    if (!Array.isArray(images)) images = [];
+
+    return {
+      id: row.id,
+      owner_id: row.owner_id,
+      category_id: row.category_id,
+      name: row.name,
+      description: row.description,
+      price: Number(row.price),
+      currency: row.currency,
+      location: row.location,
+
+      // cover lama tetap
+      image: row.image_url,
+
+      // tambahan: semua images
+      images,
+
+      daily_capacity: row.daily_capacity,
+      rating: row.rating ? Number(row.rating) : 0,
+      is_active: !!row.is_active,
+      created_at: row.created_at,
+    };
+  });
 }
 
 // ==============================
@@ -293,8 +327,8 @@ async function ensure_owned_product(product_id, owner_id) {
   if (!existing) return null;
 
   if (Number(existing.owner_id) !== Number(owner_id)) {
-    const err = new Error("Forbidden");
-    err.code = "FORBIDDEN";
+    const err = new Error('Forbidden');
+    err.code = 'FORBIDDEN';
     throw err;
   }
 
@@ -316,7 +350,7 @@ async function list_product_images_for_owner(product_id, owner_id) {
       WHERE product_id = ?
       ORDER BY sort_order ASC, id ASC
     `,
-    [product_id]
+    [product_id],
   );
 
   return rows || [];
@@ -325,17 +359,15 @@ async function list_product_images_for_owner(product_id, owner_id) {
 async function add_product_image_for_owner(product_id, owner_id, payload) {
   await ensure_owned_product(product_id, owner_id);
 
-  const image_url =
-    typeof payload?.image_url === "string" ? payload.image_url.trim() : "";
+  const image_url = typeof payload?.image_url === 'string' ? payload.image_url.trim() : '';
   const sort_order =
-    typeof payload?.sort_order === "number" &&
-    Number.isFinite(payload.sort_order)
+    typeof payload?.sort_order === 'number' && Number.isFinite(payload.sort_order)
       ? payload.sort_order
       : 0;
 
   if (!image_url) {
-    const err = new Error("image_url is required");
-    err.code = "VALIDATION";
+    const err = new Error('image_url is required');
+    err.code = 'VALIDATION';
     throw err;
   }
 
@@ -344,7 +376,7 @@ async function add_product_image_for_owner(product_id, owner_id, payload) {
       INSERT INTO product_images (product_id, image_url, sort_order)
       VALUES (?,?,?)
     `,
-    [product_id, image_url, sort_order]
+    [product_id, image_url, sort_order],
   );
 
   return {
@@ -359,8 +391,8 @@ async function add_product_images_bulk_for_owner(product_id, owner_id, images) {
   await ensure_owned_product(product_id, owner_id);
 
   if (!Array.isArray(images) || images.length === 0) {
-    const err = new Error("images is required");
-    err.code = "VALIDATION";
+    const err = new Error('images is required');
+    err.code = 'VALIDATION';
     throw err;
   }
 
@@ -369,10 +401,9 @@ async function add_product_images_bulk_for_owner(product_id, owner_id, images) {
   for (let i = 0; i < images.length; i += 1) {
     const item = images[i];
 
-    const image_url =
-      typeof item?.image_url === "string" ? item.image_url.trim() : "";
+    const image_url = typeof item?.image_url === 'string' ? item.image_url.trim() : '';
     const sort_order =
-      typeof item?.sort_order === "number" && Number.isFinite(item.sort_order)
+      typeof item?.sort_order === 'number' && Number.isFinite(item.sort_order)
         ? item.sort_order
         : i;
 
@@ -383,7 +414,7 @@ async function add_product_images_bulk_for_owner(product_id, owner_id, images) {
         INSERT INTO product_images (product_id, image_url, sort_order)
         VALUES (?,?,?)
       `,
-      [product_id, image_url, sort_order]
+      [product_id, image_url, sort_order],
     );
 
     inserted.push({
@@ -397,46 +428,38 @@ async function add_product_images_bulk_for_owner(product_id, owner_id, images) {
   return inserted;
 }
 
-async function update_product_image_for_owner(
-  product_id,
-  owner_id,
-  image_id,
-  payload
-) {
+async function update_product_image_for_owner(product_id, owner_id, image_id, payload) {
   await ensure_owned_product(product_id, owner_id);
 
   const id = Number(image_id);
   if (!id) {
-    const err = new Error("image_id is invalid");
-    err.code = "VALIDATION";
+    const err = new Error('image_id is invalid');
+    err.code = 'VALIDATION';
     throw err;
   }
 
   const sets = [];
   const params = [];
 
-  if (typeof payload?.image_url === "string") {
+  if (typeof payload?.image_url === 'string') {
     const image_url = payload.image_url.trim();
     if (!image_url) {
-      const err = new Error("image_url cannot be empty");
-      err.code = "VALIDATION";
+      const err = new Error('image_url cannot be empty');
+      err.code = 'VALIDATION';
       throw err;
     }
-    sets.push("image_url = ?");
+    sets.push('image_url = ?');
     params.push(image_url);
   }
 
-  if (
-    typeof payload?.sort_order === "number" &&
-    Number.isFinite(payload.sort_order)
-  ) {
-    sets.push("sort_order = ?");
+  if (typeof payload?.sort_order === 'number' && Number.isFinite(payload.sort_order)) {
+    sets.push('sort_order = ?');
     params.push(payload.sort_order);
   }
 
   if (sets.length === 0) {
-    const err = new Error("No fields to update");
-    err.code = "VALIDATION";
+    const err = new Error('No fields to update');
+    err.code = 'VALIDATION';
     throw err;
   }
 
@@ -445,10 +468,10 @@ async function update_product_image_for_owner(
   const res = await query(
     `
       UPDATE product_images
-      SET ${sets.join(", ")}
+      SET ${sets.join(', ')}
       WHERE product_id = ? AND id = ?
     `,
-    params
+    params,
   );
 
   return { affected_rows: res.affectedRows || 0 };
@@ -459,8 +482,8 @@ async function delete_product_image_for_owner(product_id, owner_id, image_id) {
 
   const id = Number(image_id);
   if (!id) {
-    const err = new Error("image_id is invalid");
-    err.code = "VALIDATION";
+    const err = new Error('image_id is invalid');
+    err.code = 'VALIDATION';
     throw err;
   }
 
@@ -469,7 +492,7 @@ async function delete_product_image_for_owner(product_id, owner_id, image_id) {
       DELETE FROM product_images
       WHERE product_id = ? AND id = ?
     `,
-    [product_id, id]
+    [product_id, id],
   );
 
   return { affected_rows: res.affectedRows || 0 };
@@ -479,8 +502,8 @@ async function reorder_product_images_for_owner(product_id, owner_id, order) {
   await ensure_owned_product(product_id, owner_id);
 
   if (!Array.isArray(order) || order.length === 0) {
-    const err = new Error("order is required");
-    err.code = "VALIDATION";
+    const err = new Error('order is required');
+    err.code = 'VALIDATION';
     throw err;
   }
 
@@ -499,7 +522,7 @@ async function reorder_product_images_for_owner(product_id, owner_id, order) {
         SET sort_order = ?
         WHERE product_id = ? AND id = ?
       `,
-      [sort_order, product_id, id]
+      [sort_order, product_id, id],
     );
 
     touched += res.affectedRows || 0;
