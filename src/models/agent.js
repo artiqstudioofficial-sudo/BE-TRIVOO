@@ -1,33 +1,25 @@
-const db = require("../configs/db");
+const db = require('../configs/db');
 
-const AGENT_TYPES = new Set(["INDIVIDUAL", "CORPORATE"]);
-const SPECIALIZATIONS = new Set(["TOUR", "STAY", "TRANSPORT"]);
-const VERIF_STATUS = new Set(["PENDING", "APPROVED", "VERIFIED", "REJECTED"]);
+const AGENT_TYPES = new Set(['INDIVIDUAL', 'CORPORATE']);
+const SPECIALIZATIONS = new Set(['TOUR', 'STAY', 'TRANSPORT']);
+const VERIF_STATUS = new Set(['PENDING', 'APPROVED', 'VERIFIED', 'REJECTED']);
 
 function pick_enum(val, set, fallback) {
-  const v = String(val || "").toUpperCase();
+  const v = String(val || '').toUpperCase();
   return set.has(v) ? v : fallback;
 }
 
 function normalize_upsert_payload(payload) {
-  if (!payload) throw new Error("payload is required");
+  if (!payload) throw new Error('payload is required');
 
   const user_id = payload.user_id ?? payload.userId;
-  if (!user_id) throw new Error("user_id is required");
+  if (!user_id) throw new Error('user_id is required');
 
   const uid = Number(user_id);
-  if (!Number.isFinite(uid) || uid <= 0) throw new Error("user_id is invalid");
+  if (!Number.isFinite(uid) || uid <= 0) throw new Error('user_id is invalid');
 
-  const agent_type = pick_enum(
-    payload.agent_type ?? payload.agentType,
-    AGENT_TYPES,
-    "INDIVIDUAL"
-  );
-  const specialization = pick_enum(
-    payload.specialization,
-    SPECIALIZATIONS,
-    "TOUR"
-  );
+  const agent_type = pick_enum(payload.agent_type ?? payload.agentType, AGENT_TYPES, 'INDIVIDUAL');
+  const specialization = pick_enum(payload.specialization, SPECIALIZATIONS, 'TOUR');
 
   const id_card_number = String(payload.id_card_number).trim();
   const tax_id = String(payload.tax_id).trim();
@@ -35,11 +27,11 @@ function normalize_upsert_payload(payload) {
   const bank_account_number = String(payload.bank_account_number).trim();
   const bank_account_holder = String(payload.bank_account_holder).trim();
 
-  if (!id_card_number) throw new Error("id_card_number is required");
-  if (!tax_id) throw new Error("tax_id is required");
-  if (!bank_name) throw new Error("bank_name is required");
-  if (!bank_account_number) throw new Error("bank_account_number is required");
-  if (!bank_account_holder) throw new Error("bank_account_holder is required");
+  if (!id_card_number) throw new Error('id_card_number is required');
+  if (!tax_id) throw new Error('tax_id is required');
+  if (!bank_name) throw new Error('bank_name is required');
+  if (!bank_account_number) throw new Error('bank_account_number is required');
+  if (!bank_account_holder) throw new Error('bank_account_holder is required');
 
   const company_name = payload.company_name;
   const id_document_url = payload.id_document_url;
@@ -128,8 +120,8 @@ async function find_verification_by_user_id(user_id) {
 }
 
 async function update_agent_verification_status(user_id, status) {
-  const st = String(status || "").toUpperCase();
-  if (!VERIF_STATUS.has(st)) throw new Error("Invalid verification status");
+  const st = String(status || '').toUpperCase();
+  if (!VERIF_STATUS.has(st)) throw new Error('Invalid verification status');
 
   const sql = `
     UPDATE agent_verifications
@@ -148,11 +140,10 @@ async function set_agent_verification_decision({
   rejection_reason = null,
 }) {
   const uid = Number(user_id);
-  if (!Number.isFinite(uid) || uid <= 0) throw new Error("user_id is invalid");
+  if (!Number.isFinite(uid) || uid <= 0) throw new Error('user_id is invalid');
 
-  const act = String(action || "").toUpperCase();
-  if (!["APPROVE", "REJECT"].includes(act))
-    throw new Error("action must be APPROVE or REJECT");
+  const act = String(action || '').toUpperCase();
+  if (!['APPROVE', 'REJECT'].includes(act)) throw new Error('action must be APPROVE or REJECT');
 
   const conn = await db.getConnection();
   try {
@@ -160,12 +151,11 @@ async function set_agent_verification_decision({
 
     const [vrows] = await conn.query(
       `SELECT id FROM agent_verifications WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
-      [uid]
+      [uid],
     );
-    if (!vrows[0])
-      throw new Error("Agent verification not found for this user");
+    if (!vrows[0]) throw new Error('Agent verification not found for this user');
 
-    if (act === "APPROVE") {
+    if (act === 'APPROVE') {
       await conn.query(
         `
         UPDATE agent_verifications
@@ -177,7 +167,7 @@ async function set_agent_verification_decision({
           updated_at = CURRENT_TIMESTAMP
         WHERE user_id = ?
         `,
-        [reviewed_by, uid]
+        [reviewed_by, uid],
       );
 
       await conn.query(
@@ -186,12 +176,10 @@ async function set_agent_verification_decision({
         SET verification_status = 'VERIFIED', updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         `,
-        [uid]
+        [uid],
       );
     } else {
-      const reason = rejection_reason
-        ? String(rejection_reason).trim()
-        : "Rejected by admin";
+      const reason = rejection_reason ? String(rejection_reason).trim() : 'Rejected by admin';
 
       await conn.query(
         `
@@ -204,7 +192,7 @@ async function set_agent_verification_decision({
           updated_at = CURRENT_TIMESTAMP
         WHERE user_id = ?
         `,
-        [reviewed_by, reason, uid]
+        [reviewed_by, reason, uid],
       );
 
       await conn.query(
@@ -213,7 +201,7 @@ async function set_agent_verification_decision({
         SET verification_status = 'REJECTED', updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
         `,
-        [uid]
+        [uid],
       );
     }
 

@@ -1,131 +1,177 @@
-require("dotenv").config();
+require('dotenv').config();
 
-const express = require("express");
-const bodyParser = require("body-parser");
-const helmet = require("helmet");
-const logger = require("morgan");
-const compression = require("compression");
-const cors = require("cors");
-const cookieParser = require("cookie-parser");
-const session = require("express-session");
+const express = require('express');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const compression = require('compression');
+const cors = require('cors');
+const cookieParser = require('cookie-parser');
+const session = require('express-session');
+
+const routerNav = require('./src/index');
 
 const app = express();
-const port = process.env.PORT || 4000;
 
-const routerNav = require("./src/index");
+// --------------------
+// ENV + defaults
+// --------------------
+const PORT = Number(process.env.PORT || 4000);
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const IS_PROD = NODE_ENV === 'production';
 
-// ====== BASIC ======
-app.use(logger("dev"));
-app.use(helmet());
+if (IS_PROD && !process.env.SESSION_SECRET) {
+  throw new Error('SESSION_SECRET wajib di production.');
+}
+
+// --------------------
+// Trust proxy (IMPORTANT)
+// --------------------
+app.set('trust proxy', 1);
+
+// --------------------
+// Middlewares (order matters)
+// --------------------
+app.use(morgan(IS_PROD ? 'combined' : 'dev'));
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  }),
+);
 app.use(compression());
 
-app.use(express.static("public"));
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json());
+app.use(express.static('public'));
+
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
 
-// ====== CORS (COOKIE SESSION BUTUH ORIGIN SPESIFIK) ======
-const allowedOrigins = ["http://localhost:3000", "http://127.0.0.1:3000"];
+// --------------------
+// CORS
+// --------------------
+const allowedOrigins = new Set(['http://localhost:3000', 'http://127.0.0.1:3000']);
 
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      // allow request tanpa origin (curl/postman/server-to-server)
-      if (!origin) return cb(null, true);
+const corsOptions = {
+  origin(origin, cb) {
+    if (!origin) return cb(null, true);
+    return cb(null, allowedOrigins.has(origin));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 204,
+};
 
-      if (allowedOrigins.includes(origin)) return cb(null, true);
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
-      return cb(new Error(`CORS blocked for origin: ${origin}`), false);
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    optionsSuccessStatus: 204,
-  })
-);
+// Optional: kalau origin ditolak, kasih respon jelas
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && !allowedOrigins.has(origin)) {
+    return res.status(403).json({
+      status: 403,
+      error: true,
+      message: `CORS blocked for origin: ${origin}`,
+    });
+  }
+  next();
+});
 
-// preflight
-app.options("*", cors());
+// --------------------
+// Session store (Redis optional)
+// --------------------
+let sessionStore;
 
-// ====== SESSION STORE (REDIS) - SUPPORT ALL connect-redis VERSIONS ======
-let sessionStore; // boleh undefined => express-session fallback MemoryStore (dev only)
+async function initSessionStore() {
+  if (!process.env.REDIS_URL) {
+    console.warn('[WARN] REDIS_URL not set. Using MemoryStore (DEV ONLY).');
+    return;
+  }
 
-if (process.env.REDIS_URL) {
-  const { createClient } = require("redis");
-  const connectRedisPkg = require("connect-redis");
+  const { createClient } = require('redis');
+  const connectRedisPkg = require('connect-redis');
 
   const redisClient = createClient({ url: process.env.REDIS_URL });
 
-  redisClient.on("error", (err) => console.error("[REDIS] error:", err));
-  redisClient
-    .connect()
-    .then(() => console.log("[REDIS] connected"))
-    .catch((e) => console.error("[REDIS] connect failed:", e));
+  redisClient.on('error', (err) => console.error('[REDIS] error:', err));
+  await redisClient.connect();
+  console.log('[REDIS] connected');
 
-  // 1) connect-redis v7 (ESM/CJS): require("connect-redis").default.create(...)
   const v7Default = connectRedisPkg?.default;
-  if (v7Default && typeof v7Default.create === "function") {
-    sessionStore = v7Default.create({
-      client: redisClient,
-      prefix: "sess:",
-    });
+  if (v7Default && typeof v7Default.create === 'function') {
+    sessionStore = v7Default.create({ client: redisClient, prefix: 'sess:' });
+    return;
   }
-  // 2) connect-redis versi lama: require("connect-redis")(session) => ctor
-  else if (typeof connectRedisPkg === "function") {
+
+  if (typeof connectRedisPkg === 'function') {
     const RedisStoreCtor = connectRedisPkg(session);
-    sessionStore = new RedisStoreCtor({
-      client: redisClient,
-      prefix: "sess:",
-    });
+    sessionStore = new RedisStoreCtor({ client: redisClient, prefix: 'sess:' });
+    return;
   }
-  // 3) varian lain: connectRedisPkg.RedisStore / connectRedisPkg.default (ctor)
-  else {
-    const RedisStoreCtor =
-      connectRedisPkg?.RedisStore || connectRedisPkg?.default;
 
-    if (typeof RedisStoreCtor !== "function") {
-      throw new Error(
-        "connect-redis export tidak cocok. Cek versi dengan: npm ls connect-redis"
-      );
-    }
-
-    sessionStore = new RedisStoreCtor({
-      client: redisClient,
-      prefix: "sess:",
-    });
+  const RedisStoreCtor = connectRedisPkg?.RedisStore || connectRedisPkg?.default;
+  if (typeof RedisStoreCtor !== 'function') {
+    throw new Error('connect-redis export tidak cocok. Cek versi: npm ls connect-redis');
   }
-} else {
-  console.warn("[WARN] REDIS_URL not set. Using MemoryStore (DEV ONLY).");
+
+  sessionStore = new RedisStoreCtor({ client: redisClient, prefix: 'sess:' });
 }
 
-// kalau dibelakang reverse proxy (nginx/cloudflare), ini penting untuk cookie secure
-app.set("trust proxy", 1);
-
-// ====== SESSION MIDDLEWARE ======
-app.use(
-  session({
-    name: "sid",
-    secret: process.env.SESSION_SECRET || "dev-secret-change-me",
+function buildSessionOptions() {
+  return {
+    name: 'sid',
+    secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
     resave: false,
     saveUninitialized: false,
-    store: sessionStore, // undefined => MemoryStore (dev)
+    rolling: false,
+    store: sessionStore,
     cookie: {
       httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production", // true hanya kalau HTTPS
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 hari
+      sameSite: 'lax',
+      secure: IS_PROD,
+      maxAge: 1000 * 60 * 60 * 24 * 7,
     },
-  })
-);
+  };
+}
 
-app.use("/", routerNav);
+// --------------------
+// Error handler
+// --------------------
+function errorHandler(err, _req, res, _next) {
+  console.error('[ERROR]', err);
+  res.status(500).json({
+    status: 500,
+    error: true,
+    message: IS_PROD ? 'Internal Server Error' : String(err?.message || err),
+  });
+}
 
-app.use((_, res) => {
-  res.sendStatus(404);
+// --------------------
+// Bootstrap server
+// --------------------
+async function start() {
+  await initSessionStore();
+
+  // ✅ FIX UTAMA: session harus dipasang sebelum routes
+  app.use(session(buildSessionOptions()));
+
+  // ✅ Routes dipasang SETELAH session
+  app.use('/', routerNav);
+
+  // 404 handler setelah routes
+  app.use((_, res) => res.sendStatus(404));
+
+  // error handler paling bawah
+  app.use(errorHandler);
+
+  const server = app.listen(PORT, () => {
+    console.log(`\n\t*** Server listening on PORT ${PORT} (${NODE_ENV}) ***`);
+  });
+
+  module.exports = server;
+}
+
+start().catch((e) => {
+  console.error('[FATAL] failed to start:', e);
+  process.exit(1);
 });
-
-const server = app.listen(port, () => {
-  console.log(`\n\t *** Server listening on PORT ${port}  ***`);
-});
-
-module.exports = server;

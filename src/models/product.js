@@ -22,16 +22,48 @@ function safe_parse_json(value, fallback) {
 async function find_product_row_by_id(product_id) {
   const rows = await query(
     `
-      SELECT
-        p.*
-      FROM products p
-      WHERE p.id = ?
-      LIMIT 1
+    SELECT
+      p.id,
+      p.owner_id,
+      p.category_id,
+      p.name,
+      p.description,
+      p.price,
+      p.currency,
+      p.location,
+      p.image_url,
+      p.daily_capacity,
+      p.features,
+      p.details,
+      p.rating,
+      p.is_active,
+      p.created_at,
+
+      COALESCE(
+        (
+          SELECT JSON_ARRAYAGG(
+            JSON_OBJECT(
+              'id', pi.id,
+              'url', pi.image_url,
+              'sort_order', pi.sort_order,
+              'created_at', pi.created_at
+            )
+          )
+          FROM product_images pi
+          WHERE pi.product_id = p.id
+          ORDER BY pi.sort_order ASC, pi.id ASC
+        ),
+        JSON_ARRAY()
+      ) AS images_json
+
+    FROM products p
+    WHERE p.id = ?
+    LIMIT 1
     `,
     [product_id],
   );
 
-  return rows[0] || null;
+  return rows?.[0] ?? null;
 }
 
 async function find_product_images(product_id) {
@@ -167,55 +199,62 @@ async function update_product(product_id, owner_id, payload) {
     throw err;
   }
 
-  await query(
-    `
-      UPDATE products
-      SET
-        category_id    = ?,
-        name           = ?,
-        description    = ?,
-        price          = ?,
-        currency       = ?,
-        location       = ?,
-        image_url      = ?,
-        features       = ?,
-        details        = ?,
-        daily_capacity = ?,
-        updated_at     = CURRENT_TIMESTAMP
-      WHERE id = ? AND owner_id = ?
-    `,
-    [
-      payload.category_id,
-      payload.name,
-      payload.description,
-      payload.price,
-      payload.currency,
-      payload.location,
-      payload.image,
-      payload.features ? JSON.stringify(payload.features) : null,
-      payload.details ? JSON.stringify(payload.details) : null,
-      payload.daily_capacity || 10,
-      product_id,
-      owner_id,
-    ],
-  );
+  const fields = [];
+  const values = [];
 
-  await query(`DELETE FROM product_images WHERE product_id = ?`, [product_id]);
-  if (Array.isArray(payload.images) && payload.images.length > 0) {
+  const set = (key, val) => {
+    fields.push(`${key} = ?`);
+    values.push(val);
+  };
+
+  if (payload.category_id !== undefined) set('category_id', payload.category_id);
+  if (payload.name !== undefined) set('name', payload.name);
+  if (payload.description !== undefined) set('description', payload.description);
+  if (payload.price !== undefined) set('price', payload.price);
+  if (payload.currency !== undefined) set('currency', payload.currency);
+  if (payload.location !== undefined) set('location', payload.location);
+  if (payload.image_url !== undefined) set('image_url', payload.image_url);
+  if (payload.daily_capacity !== undefined) set('daily_capacity', payload.daily_capacity);
+
+  if (payload.features !== undefined) {
+    set('features', payload.features ? JSON.stringify(payload.features) : null);
+  }
+
+  if (payload.details !== undefined) {
+    set('details', payload.details ? JSON.stringify(payload.details) : null);
+  }
+
+  if (fields.length > 0) {
+    fields.push(`updated_at = CURRENT_TIMESTAMP`);
+
+    const sql = `
+      UPDATE products
+      SET ${fields.join(', ')}
+      WHERE id = ? AND owner_id = ?
+    `;
+
+    await query(sql, [...values, product_id, owner_id]);
+  }
+
+  // images (replace only if sent)
+  if (Array.isArray(payload.images)) {
+    await query(`DELETE FROM product_images WHERE product_id = ?`, [product_id]);
+
     for (let i = 0; i < payload.images.length; i += 1) {
-      const img = payload.images[i];
       await query(
         `
           INSERT INTO product_images (product_id, image_url, sort_order)
           VALUES (?,?,?)
         `,
-        [product_id, img, i],
+        [product_id, payload.images[i], i],
       );
     }
   }
 
-  await query(`DELETE FROM product_blocked_dates WHERE product_id = ?`, [product_id]);
-  if (Array.isArray(payload.blocked_dates) && payload.blocked_dates.length > 0) {
+  // blocked_dates (replace only if sent)
+  if (Array.isArray(payload.blocked_dates)) {
+    await query(`DELETE FROM product_blocked_dates WHERE product_id = ?`, [product_id]);
+
     for (const date of payload.blocked_dates) {
       await query(
         `
@@ -235,7 +274,37 @@ async function get_product_by_id_for_owner(product_id, owner_id) {
   const row = await find_product_row_by_id(product_id);
   if (!row) return null;
   if (Number(row.owner_id) !== Number(owner_id)) return null;
-  return build_product_response(row);
+
+  let images = row.images_json;
+
+  // guard JSON kadang string
+  if (typeof images === 'string') {
+    try {
+      images = JSON.parse(images);
+    } catch {
+      images = [];
+    }
+  }
+  if (!Array.isArray(images)) images = [];
+
+  return {
+    id: row.id,
+    owner_id: row.owner_id,
+    category_id: row.category_id,
+    name: row.name,
+    description: row.description,
+    price: Number(row.price),
+    currency: row.currency,
+    location: row.location,
+    image: row.image_url,
+    images,
+    features: row.features,
+    details: row.details,
+    daily_capacity: row.daily_capacity,
+    rating: row.rating ? Number(row.rating) : 0,
+    is_active: !!row.is_active,
+    created_at: row.created_at,
+  };
 }
 
 async function list_products_by_owner(owner_id) {
@@ -252,6 +321,8 @@ async function list_products_by_owner(owner_id) {
       p.location,
       p.image_url,
       p.daily_capacity,
+      p.features,
+      p.details,
       p.rating,
       p.is_active,
       p.created_at,
@@ -309,7 +380,8 @@ async function list_products_by_owner(owner_id) {
 
       // tambahan: semua images
       images,
-
+      features: row.features,
+      details: row.details,
       daily_capacity: row.daily_capacity,
       rating: row.rating ? Number(row.rating) : 0,
       is_active: !!row.is_active,
