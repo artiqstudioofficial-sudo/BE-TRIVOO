@@ -8,6 +8,7 @@ const {
   update_product_image_for_owner,
   list_product_images_for_owner,
   reorder_product_images_for_owner,
+  delete_product_for_owner,
 } = require('../models/product');
 
 function get_session_user(req) {
@@ -160,6 +161,33 @@ async function update_my_product(req, res) {
   } catch (e) {
     console.error(e);
     return misc.response(res, e.status_code || 500, true, e.message || 'Internal server error');
+  }
+}
+
+async function delete_my_product(req, res) {
+  try {
+    const user = ensure_agent(req);
+    const product_id = Number.parseInt(req.params.id, 10);
+
+    if (!product_id) {
+      return misc.response(res, 400, true, 'product_id tidak valid');
+    }
+
+    const result = await delete_product_for_owner(product_id, user.id);
+
+    if (!result || !result.affected_rows) {
+      return misc.response(res, 404, true, 'Product tidak ditemukan');
+    }
+
+    return misc.response(res, 200, false, 'Product deleted');
+  } catch (e) {
+    console.error(e);
+    return misc.response(
+      res,
+      e.status_code || (e.code === 'FORBIDDEN' ? 403 : 500),
+      true,
+      e.message || 'Internal server error',
+    );
   }
 }
 
@@ -318,6 +346,7 @@ module.exports = {
   get_my_product,
   create_my_product,
   update_my_product,
+  delete_my_product,
 
   list_my_product_images,
   add_my_product_images,

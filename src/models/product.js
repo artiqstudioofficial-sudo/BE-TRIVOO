@@ -270,6 +270,27 @@ async function update_product(product_id, owner_id, payload) {
   return build_product_response(row);
 }
 
+async function delete_product_for_owner(product_id, owner_id) {
+  const existing = await find_product_row_by_id(product_id);
+  if (!existing) return null;
+
+  if (Number(existing.owner_id) !== Number(owner_id)) {
+    const err = new Error('Forbidden');
+    err.code = 'FORBIDDEN';
+    throw err;
+  }
+
+  await query(`DELETE FROM product_images WHERE product_id = ?`, [product_id]);
+  await query(`DELETE FROM product_blocked_dates WHERE product_id = ?`, [product_id]);
+
+  const res = await query(`DELETE FROM products WHERE id = ? AND owner_id = ?`, [
+    product_id,
+    owner_id,
+  ]);
+
+  return { affected_rows: res.affectedRows || 0 };
+}
+
 async function get_product_by_id_for_owner(product_id, owner_id) {
   const row = await find_product_row_by_id(product_id);
   if (!row) return null;
@@ -606,6 +627,7 @@ async function reorder_product_images_for_owner(product_id, owner_id, order) {
 module.exports = {
   create_product,
   update_product,
+  delete_product_for_owner,
   get_product_by_id_for_owner,
   list_products_by_owner,
   list_product_images_for_owner,
