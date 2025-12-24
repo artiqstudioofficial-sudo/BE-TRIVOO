@@ -1,4 +1,4 @@
-const misc = require("../helpers/response");
+const misc = require('../helpers/response');
 const {
   create_product,
   update_product,
@@ -8,7 +8,7 @@ const {
   update_product_image_for_owner,
   list_product_images_for_owner,
   reorder_product_images_for_owner,
-} = require("../models/product");
+} = require('../models/product');
 
 function get_session_user(req) {
   return req?.session?.user || null;
@@ -18,13 +18,13 @@ function ensure_agent(req) {
   const user = get_session_user(req);
 
   if (!user) {
-    const err = new Error("Unauthorized");
+    const err = new Error('Unauthorized');
     err.status_code = 401;
     throw err;
   }
 
-  if (user.role !== "AGENT") {
-    const err = new Error("Forbidden");
+  if (user.role !== 'AGENT') {
+    const err = new Error('Forbidden');
     err.status_code = 403;
     throw err;
   }
@@ -33,7 +33,7 @@ function ensure_agent(req) {
 }
 
 function to_number_or_null(v) {
-  if (v === undefined || v === null || v === "") return null;
+  if (v === undefined || v === null || v === '') return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
@@ -51,15 +51,10 @@ async function list_my_products(req, res) {
   try {
     const user = ensure_agent(req);
     const data = await list_products_by_owner(user.id);
-    return misc.response(res, 200, false, "OK", data);
+    return misc.response(res, 200, false, 'OK', data);
   } catch (e) {
     console.error(e);
-    return misc.response(
-      res,
-      e.status_code || 500,
-      true,
-      e.message || "Internal server error"
-    );
+    return misc.response(res, e.status_code || 500, true, e.message || 'Internal server error');
   }
 }
 
@@ -69,23 +64,18 @@ async function get_my_product(req, res) {
     const product_id = Number.parseInt(req.params.id, 10);
 
     if (!product_id) {
-      return misc.response(res, 400, true, "product_id tidak valid");
+      return misc.response(res, 400, true, 'product_id tidak valid');
     }
 
     const product = await get_product_by_id_for_owner(product_id, user.id);
     if (!product) {
-      return misc.response(res, 404, true, "Product tidak ditemukan");
+      return misc.response(res, 404, true, 'Product tidak ditemukan');
     }
 
-    return misc.response(res, 200, false, "OK", product);
+    return misc.response(res, 200, false, 'OK', product);
   } catch (e) {
     console.error(e);
-    return misc.response(
-      res,
-      e.status_code || 500,
-      true,
-      e.message || "Internal server error"
-    );
+    return misc.response(res, e.status_code || 500, true, e.message || 'Internal server error');
   }
 }
 
@@ -108,15 +98,8 @@ async function create_my_product(req, res) {
       blocked_dates,
     } = req.body;
 
-    if (
-      !category_id ||
-      !name ||
-      !description ||
-      price == null ||
-      !currency ||
-      !location
-    ) {
-      return misc.response(res, 400, true, "Field wajib belum lengkap");
+    if (!category_id || !name || !description || price == null || !currency || !location) {
+      return misc.response(res, 400, true, 'Field wajib belum lengkap');
     }
 
     const payload = {
@@ -130,31 +113,26 @@ async function create_my_product(req, res) {
       image_url: image_url,
       images: images,
       features: features,
-      details: details || null,
+      details: details,
       daily_capacity: to_number_or_default(daily_capacity, 10),
       blocked_dates: blocked_dates,
     };
 
     const product = await create_product(payload);
-    return misc.response(res, 201, false, "Product created", product);
+    return misc.response(res, 201, false, 'Product created', product);
   } catch (e) {
     console.error(e);
-    return misc.response(
-      res,
-      e.status_code || 500,
-      true,
-      e.message || "Internal server error"
-    );
+    return misc.response(res, e.status_code || 500, true, e.message || 'Internal server error');
   }
 }
 
 async function update_my_product(req, res) {
   try {
     const user = ensure_agent(req);
-    const product_id = Number.parseInt(req.params.id, 10);
+    const product_id = req.params.id;
 
     if (!product_id) {
-      return misc.response(res, 400, true, "product_id tidak valid");
+      return misc.response(res, 400, true, 'product_id tidak valid');
     }
 
     const payload = {
@@ -166,27 +144,22 @@ async function update_my_product(req, res) {
       currency: req.body?.currency,
       location: req.body?.location,
       image_url: req.body?.image_url,
-      images: ensure_array(req.body?.images),
-      features: ensure_array(req.body?.features),
-      details: req.body?.details || null,
+      images: req.body?.images,
+      features: req.body?.features,
+      details: req.body?.details,
       daily_capacity: to_number_or_default(req.body?.daily_capacity, 10),
-      blocked_dates: ensure_array(req.body?.blocked_dates),
+      blocked_dates: req.body?.blocked_dates,
     };
 
     const product = await update_product(product_id, user.id, payload);
     if (!product) {
-      return misc.response(res, 404, true, "Product tidak ditemukan");
+      return misc.response(res, 404, true, 'Product tidak ditemukan');
     }
 
-    return misc.response(res, 200, false, "Product updated", product);
+    return misc.response(res, 200, false, 'Product updated', product);
   } catch (e) {
     console.error(e);
-    return misc.response(
-      res,
-      e.status_code || 500,
-      true,
-      e.message || "Internal server error"
-    );
+    return misc.response(res, e.status_code || 500, true, e.message || 'Internal server error');
   }
 }
 
@@ -196,18 +169,18 @@ async function list_my_product_images(req, res) {
     const product_id = Number.parseInt(req.params.id, 10);
 
     if (!product_id) {
-      return misc.response(res, 400, true, "product_id tidak valid");
+      return misc.response(res, 400, true, 'product_id tidak valid');
     }
 
     const images = await list_products_by_owner(product_id, user.id);
-    return misc.response(res, 200, false, "OK", images);
+    return misc.response(res, 200, false, 'OK', images);
   } catch (e) {
     console.error(e);
     return misc.response(
       res,
-      e.status_code || (e.code === "FORBIDDEN" ? 403 : 500),
+      e.status_code || (e.code === 'FORBIDDEN' ? 403 : 500),
       true,
-      e.message || "Internal server error"
+      e.message || 'Internal server error',
     );
   }
 }
@@ -218,19 +191,14 @@ async function add_my_product_images(req, res) {
     const product_id = Number.parseInt(req.params.id, 10);
 
     if (!product_id) {
-      return misc.response(res, 400, true, "product_id tidak valid");
+      return misc.response(res, 400, true, 'product_id tidak valid');
     }
 
     if (Array.isArray(req.body?.images)) {
-      await add_product_images_bulk_for_owner(
-        product_id,
-        user.id,
-        req.body.images
-      );
+      await add_product_images_bulk_for_owner(product_id, user.id, req.body.images);
     } else {
       const { image_url, sort_order } = req.body || {};
-      if (!image_url)
-        return misc.response(res, 400, true, "image_url wajib diisi");
+      if (!image_url) return misc.response(res, 400, true, 'image_url wajib diisi');
 
       await add_product_image_for_owner(product_id, user.id, {
         image_url,
@@ -239,14 +207,14 @@ async function add_my_product_images(req, res) {
     }
 
     const images = await list_product_images_for_owner(product_id, user.id);
-    return misc.response(res, 201, false, "Product images added", images);
+    return misc.response(res, 201, false, 'Product images added', images);
   } catch (e) {
     console.error(e);
     return misc.response(
       res,
-      e.status_code || (e.code === "FORBIDDEN" ? 403 : 500),
+      e.status_code || (e.code === 'FORBIDDEN' ? 403 : 500),
       true,
-      e.message || "Internal server error"
+      e.message || 'Internal server error',
     );
   }
 }
@@ -257,39 +225,32 @@ async function update_my_product_image(req, res) {
     const product_id = Number.parseInt(req.params.id, 10);
     const image_id = Number.parseInt(req.params.image_id, 10);
 
-    if (!product_id)
-      return misc.response(res, 400, true, "product_id tidak valid");
-    if (!image_id) return misc.response(res, 400, true, "image_id tidak valid");
+    if (!product_id) return misc.response(res, 400, true, 'product_id tidak valid');
+    if (!image_id) return misc.response(res, 400, true, 'image_id tidak valid');
 
     const payload = {};
-    if (typeof req.body?.image_url !== "undefined")
-      payload.image_url = req.body.image_url;
-    if (typeof req.body?.sort_order !== "undefined")
+    if (typeof req.body?.image_url !== 'undefined') payload.image_url = req.body.image_url;
+    if (typeof req.body?.sort_order !== 'undefined')
       payload.sort_order = to_number_or_null(req.body.sort_order);
 
     if (Object.keys(payload).length === 0) {
-      return misc.response(res, 400, true, "Tidak ada field yang diupdate");
+      return misc.response(res, 400, true, 'Tidak ada field yang diupdate');
     }
 
-    const result = await update_product_image_for_owner(
-      product_id,
-      user.id,
-      image_id,
-      payload
-    );
+    const result = await update_product_image_for_owner(product_id, user.id, image_id, payload);
     if (!result?.affected_rows) {
-      return misc.response(res, 404, true, "Image tidak ditemukan");
+      return misc.response(res, 404, true, 'Image tidak ditemukan');
     }
 
     const images = await list_product_images_for_owner(product_id, user.id);
-    return misc.response(res, 200, false, "Product image updated", images);
+    return misc.response(res, 200, false, 'Product image updated', images);
   } catch (e) {
     console.error(e);
     return misc.response(
       res,
-      e.status_code || (e.code === "FORBIDDEN" ? 403 : 500),
+      e.status_code || (e.code === 'FORBIDDEN' ? 403 : 500),
       true,
-      e.message || "Internal server error"
+      e.message || 'Internal server error',
     );
   }
 }
@@ -300,28 +261,23 @@ async function delete_my_product_image(req, res) {
     const product_id = Number.parseInt(req.params.id, 10);
     const image_id = Number.parseInt(req.params.image_id, 10);
 
-    if (!product_id)
-      return misc.response(res, 400, true, "product_id tidak valid");
-    if (!image_id) return misc.response(res, 400, true, "image_id tidak valid");
+    if (!product_id) return misc.response(res, 400, true, 'product_id tidak valid');
+    if (!image_id) return misc.response(res, 400, true, 'image_id tidak valid');
 
-    const result = await delete_product_image_for_owner(
-      product_id,
-      user.id,
-      image_id
-    );
+    const result = await delete_product_image_for_owner(product_id, user.id, image_id);
     if (!result?.affected_rows) {
-      return misc.response(res, 404, true, "Image tidak ditemukan");
+      return misc.response(res, 404, true, 'Image tidak ditemukan');
     }
 
     const images = await list_product_images_for_owner(product_id, user.id);
-    return misc.response(res, 200, false, "Product image deleted", images);
+    return misc.response(res, 200, false, 'Product image deleted', images);
   } catch (e) {
     console.error(e);
     return misc.response(
       res,
-      e.status_code || (e.code === "FORBIDDEN" ? 403 : 500),
+      e.status_code || (e.code === 'FORBIDDEN' ? 403 : 500),
       true,
-      e.message || "Internal server error"
+      e.message || 'Internal server error',
     );
   }
 }
@@ -331,8 +287,7 @@ async function reorder_my_product_images(req, res) {
     const user = ensure_agent(req);
     const product_id = Number.parseInt(req.params.id, 10);
 
-    if (!product_id)
-      return misc.response(res, 400, true, "product_id tidak valid");
+    if (!product_id) return misc.response(res, 400, true, 'product_id tidak valid');
 
     const order = ensure_array(req.body?.order).map((x) => ({
       id: to_number_or_null(x?.id),
@@ -340,20 +295,20 @@ async function reorder_my_product_images(req, res) {
     }));
 
     if (order.length === 0) {
-      return misc.response(res, 400, true, "order kosong / invalid");
+      return misc.response(res, 400, true, 'order kosong / invalid');
     }
 
     await reorder_product_images_for_owner(product_id, user.id, order);
 
     const images = await list_product_images_for_owner(product_id, user.id);
-    return misc.response(res, 200, false, "Product images reordered", images);
+    return misc.response(res, 200, false, 'Product images reordered', images);
   } catch (e) {
     console.error(e);
     return misc.response(
       res,
-      e.status_code || (e.code === "FORBIDDEN" ? 403 : 500),
+      e.status_code || (e.code === 'FORBIDDEN' ? 403 : 500),
       true,
-      e.message || "Internal server error"
+      e.message || 'Internal server error',
     );
   }
 }
