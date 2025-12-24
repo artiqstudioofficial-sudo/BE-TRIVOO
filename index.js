@@ -245,10 +245,8 @@ async function start() {
   // ✅ routes
   app.use('/', routerNav);
 
-  // 404 handler setelah routes
   app.use((_, res) => res.sendStatus(404));
 
-  // error handler paling bawah
   app.use(errorHandler);
 
   const server = app.listen(PORT, () => {
