@@ -67,7 +67,6 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
-// Optional: kalau origin ditolak, kasih respon jelas
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (origin && !allowedOrigins.has(origin)) {
