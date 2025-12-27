@@ -1,11 +1,13 @@
 const misc = require('../helpers/response');
 const { update_verification_status } = require('../models/user');
 const { update_agent_verification_status } = require('../models/agent');
-const { list_agent_users, list_customer_users } = require('../models/admin');
-const { list_agent_products_admin } = require('../models/admin_product');
-const { delete_product_for_owner } = require('../models/product');
+const {
+  list_agent_users,
+  list_customer_users,
+  list_agent_products_admin,
+  get_agent_product_detail_admin,
+} = require('../models/admin');
 
-// ----------------- helpers -----------------
 function normalize_verification_action(action) {
   const upper = String(action || '').toUpperCase();
   if (upper === 'APPROVE') return 'VERIFIED';
@@ -31,7 +33,6 @@ function ensure_admin(req) {
   return user;
 }
 
-// ----------------- handlers -----------------
 async function list_agents(req, res) {
   try {
     ensure_admin(req);
@@ -54,9 +55,6 @@ async function list_customers(req, res) {
   }
 }
 
-/**
- * GET /api/v1/admin/agent-products?owner_id=&q=&page=&limit=
- */
 async function list_agent_products(req, res) {
   try {
     ensure_admin(req);
@@ -77,10 +75,27 @@ async function list_agent_products(req, res) {
   }
 }
 
-/**
- * PATCH /api/v1/admin/users/:user_id/verification
- * body: { action: "APPROVE" | "REJECT" }
- */
+async function get_agent_product_detail(req, res) {
+  try {
+    ensure_admin(req);
+
+    const product_id = Number(req.params.product_id);
+    if (!Number.isFinite(product_id) || product_id <= 0) {
+      return misc.response(res, 400, true, 'product_id tidak valid');
+    }
+
+    const data = await get_agent_product_detail_admin(product_id);
+    if (!data) {
+      return misc.response(res, 404, true, 'Product not found');
+    }
+
+    return misc.response(res, 200, false, 'OK', data);
+  } catch (e) {
+    console.error(e);
+    return misc.response(res, e.status_code || 500, true, e.message || 'Internal server error');
+  }
+}
+
 async function update_agent_verification(req, res) {
   try {
     ensure_admin(req);
@@ -107,5 +122,6 @@ module.exports = {
   list_agents,
   list_customers,
   list_agent_products,
+  get_agent_product_detail,
   update_agent_verification,
 };

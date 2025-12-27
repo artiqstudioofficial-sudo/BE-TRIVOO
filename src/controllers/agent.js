@@ -28,34 +28,6 @@ function normalize_agent_specialization(specialization) {
   return allowed.has(upper) ? upper : 'TOUR';
 }
 
-async function handle_optional_document_upload(req, user_id) {
-  if (!req.files || !req.files.id_document) return null;
-
-  ensure_upload_dir();
-
-  const doc_file = req.files.id_document;
-  const ext = path.extname(doc_file.name).toLowerCase();
-
-  if (!ALLOWED_EXTS.has(ext)) {
-    const err = new Error('Format file tidak didukung. Gunakan JPG, PNG, atau PDF');
-    err.status_code = 400;
-    throw err;
-  }
-
-  if (doc_file.size > MAX_FILE_SIZE) {
-    const err = new Error('Ukuran file maksimal 5MB');
-    err.status_code = 400;
-    throw err;
-  }
-
-  const filename = `agent-${user_id}-${Date.now()}${ext}`;
-  const dest_path = path.join(UPLOAD_DIR, filename);
-
-  await doc_file.mv(dest_path);
-
-  return `/uploads/agent_docs/${filename}`;
-}
-
 module.exports = {
   submit_verification: async (req, res) => {
     try {

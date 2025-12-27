@@ -291,44 +291,10 @@ async function delete_product_for_owner(product_id, owner_id) {
   return { affected_rows: res.affectedRows || 0 };
 }
 
-async function get_product_by_id_for_owner(product_id, owner_id) {
-  const row = await find_product_row_by_id(product_id);
-  if (!row) return null;
-  if (Number(row.owner_id) !== Number(owner_id)) return null;
-
-  let images = row.images_json;
-
-  // guard JSON kadang string
-  if (typeof images === 'string') {
-    try {
-      images = JSON.parse(images);
-    } catch {
-      images = [];
-    }
-  }
-  if (!Array.isArray(images)) images = [];
-
-  return {
-    id: row.id,
-    owner_id: row.owner_id,
-    category_id: row.category_id,
-    name: row.name,
-    description: row.description,
-    price: Number(row.price),
-    currency: row.currency,
-    location: row.location,
-    image: row.image_url,
-    images,
-    features: row.features,
-    details: row.details,
-    daily_capacity: row.daily_capacity,
-    rating: row.rating ? Number(row.rating) : 0,
-    is_active: !!row.is_active,
-    created_at: row.created_at,
-  };
-}
-
 async function list_products_by_owner(owner_id) {
+  const oid = Number(owner_id);
+  if (!Number.isFinite(oid) || oid <= 0) return [];
+
   const rows = await query(
     `
     SELECT
@@ -347,6 +313,12 @@ async function list_products_by_owner(owner_id) {
       p.rating,
       p.is_active,
       p.created_at,
+      p.updated_at,
+
+      u.id AS owner_user_id,
+      u.name AS owner_name,
+      u.email AS owner_email,
+      up.avatar_url AS owner_avatar_url,
 
       -- ambil semua images per product, urut sort_order
       COALESCE(
@@ -367,24 +339,24 @@ async function list_products_by_owner(owner_id) {
       ) AS images_json
 
     FROM products p
+    JOIN users u ON u.id = p.owner_id
+    LEFT JOIN user_profiles up ON up.user_id = u.id
     WHERE p.owner_id = ?
     ORDER BY p.created_at DESC
     `,
-    [owner_id],
+    [oid],
   );
 
   return rows.map((row) => {
-    // mysql2 biasanya sudah balikin object/array kalau tipe JSON,
-    // tapi kadang string. Jadi kita guard:
     let images = row.images_json;
-    if (typeof images === 'string') {
-      try {
-        images = JSON.parse(images);
-      } catch {
-        images = [];
-      }
-    }
+    images = safeJsonParse(images, []);
     if (!Array.isArray(images)) images = [];
+
+    const featuresRaw = safeJsonParse(row.features, []);
+    const features = Array.isArray(featuresRaw) ? featuresRaw : [];
+
+    const detailsRaw = safeJsonParse(row.details, {});
+    const details = typeof detailsRaw === 'object' && detailsRaw !== null ? detailsRaw : {};
 
     return {
       id: row.id,
@@ -396,36 +368,145 @@ async function list_products_by_owner(owner_id) {
       currency: row.currency,
       location: row.location,
 
-      // cover lama tetap
       image: row.image_url,
-
-      // tambahan: semua images
+      image_url: row.image_url,
       images,
-      features: row.features,
-      details: row.details,
+
+      features,
+      details,
+
       daily_capacity: row.daily_capacity,
       rating: row.rating ? Number(row.rating) : 0,
       is_active: !!row.is_active,
       created_at: row.created_at,
+      updated_at: row.updated_at,
+
+      owner: {
+        id: row.owner_user_id,
+        name: row.owner_name,
+        email: row.owner_email,
+        avatar_url: row.owner_avatar_url ?? null,
+      },
     };
   });
 }
 
-// ==============================
-// PRODUCT IMAGES API (ADDED)
-// ==============================
+function safeJsonParse(v, fallback) {
+  if (v == null) return fallback;
 
-async function ensure_owned_product(product_id, owner_id) {
-  const existing = await find_product_row_by_id(product_id);
-  if (!existing) return null;
-
-  if (Number(existing.owner_id) !== Number(owner_id)) {
-    const err = new Error('Forbidden');
-    err.code = 'FORBIDDEN';
-    throw err;
+  if (Buffer.isBuffer(v)) {
+    try {
+      return JSON.parse(v.toString('utf8'));
+    } catch {
+      return fallback;
+    }
   }
 
-  return existing;
+  if (typeof v === 'object') return v;
+  if (typeof v !== 'string') return fallback;
+
+  try {
+    return JSON.parse(v);
+  } catch {
+    return fallback;
+  }
+}
+
+async function get_product_by_id_for_owner(product_id, owner_id) {
+  const pid = Number(product_id);
+  const oid = Number(owner_id);
+  if (!Number.isFinite(pid) || pid <= 0) return null;
+  if (!Number.isFinite(oid) || oid <= 0) return null;
+
+  const rows = await query(
+    `
+    SELECT
+      p.id,
+      p.owner_id,
+      p.category_id,
+      p.name,
+      p.description,
+      p.price,
+      p.currency,
+      p.location,
+      p.image_url,
+      p.daily_capacity,
+      p.features,
+      p.details,
+      p.rating,
+      p.is_active,
+      p.created_at,
+      p.updated_at,
+
+      u.id AS owner_user_id,
+      u.name AS owner_name,
+      u.email AS owner_email,
+      up.avatar_url AS owner_avatar_url,
+
+      COALESCE(
+        (
+          SELECT JSON_ARRAYAGG(
+            JSON_OBJECT(
+              'id', pi.id,
+              'url', pi.image_url,
+              'sort_order', pi.sort_order,
+              'created_at', pi.created_at
+            )
+          )
+          FROM product_images pi
+          WHERE pi.product_id = p.id
+          ORDER BY pi.sort_order ASC, pi.id ASC
+        ),
+        JSON_ARRAY()
+      ) AS images_json
+
+    FROM products p
+    JOIN users u ON u.id = p.owner_id
+    LEFT JOIN user_profiles up ON up.user_id = u.id
+    WHERE p.id = ? AND p.owner_id = ?
+    LIMIT 1
+    `,
+    [pid, oid],
+  );
+
+  const row = rows?.[0];
+  if (!row) return null;
+
+  let images = safeJsonParse(row.images_json, []);
+  if (!Array.isArray(images)) images = [];
+
+  const featuresRaw = safeJsonParse(row.features, []);
+  const features = Array.isArray(featuresRaw) ? featuresRaw : [];
+
+  const detailsRaw = safeJsonParse(row.details, {});
+  const details = typeof detailsRaw === 'object' && detailsRaw !== null ? detailsRaw : {};
+
+  return {
+    id: row.id,
+    owner_id: row.owner_id,
+    category_id: row.category_id,
+    name: row.name,
+    description: row.description,
+    price: Number(row.price),
+    currency: row.currency,
+    location: row.location,
+    image: row.image_url,
+    image_url: row.image_url,
+    images,
+    features,
+    details,
+    daily_capacity: row.daily_capacity,
+    rating: row.rating ? Number(row.rating) : 0,
+    is_active: !!row.is_active,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    owner: {
+      id: row.owner_user_id,
+      name: row.owner_name,
+      email: row.owner_email,
+      avatar_url: row.owner_avatar_url ?? null,
+    },
+  };
 }
 
 async function list_product_images_for_owner(product_id, owner_id) {

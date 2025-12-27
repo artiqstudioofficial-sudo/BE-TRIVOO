@@ -126,7 +126,7 @@ app.use((req, res, next) => {
 // --------------------
 // No-cache for API (hindari 304 untuk endpoint session / auth)
 // --------------------
-app.use('/api', (req, res, next) => {
+app.use('/api', (_, res, next) => {
   res.set('Cache-Control', 'no-store');
   next();
 });
@@ -237,7 +237,7 @@ function errorHandler(err, _req, res, _next) {
 // Bootstrap server + graceful shutdown
 // --------------------
 async function start() {
-  await initSessionStore();
+  // await initSessionStore();
 
   // ✅ session harus dipasang sebelum routes
   app.use(session(buildSessionOptions()));
