@@ -235,6 +235,14 @@ async function update_product(product_id, owner_id, payload) {
     set("details", payload.details ? JSON.stringify(payload.details) : null);
   }
 
+  if (payload.lat != undefined) {
+    set("lat", payload.lat);
+  }
+
+  if (payload.lng != undefined) {
+    set("lng", payload.lng);
+  }
+
   if (fields.length > 0) {
     fields.push(`updated_at = CURRENT_TIMESTAMP`);
 

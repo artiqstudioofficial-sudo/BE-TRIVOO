@@ -176,6 +176,8 @@ async function update_my_product(req, res) {
       details: req.body?.details,
       daily_capacity: to_number_or_default(req.body?.daily_capacity, 10),
       blocked_dates: req.body?.blocked_dates,
+      lat: req.body.lat,
+      lng: req.body.lng,
     };
 
     const product = await update_product(product_id, user.id, payload);
