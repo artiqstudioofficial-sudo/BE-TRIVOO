@@ -1,10 +1,12 @@
-const conn = require('../configs/db');
+const conn = require("../configs/db");
 
 async function list_agent_products_admin(params = {}) {
   const owner_id = params.owner_id ? Number(params.owner_id) : null;
-  const q = params.q ? String(params.q).trim() : '';
+  const q = params.q ? String(params.q).trim() : "";
   const page = params.page ? Math.max(1, Number(params.page)) : 1;
-  const limit = params.limit ? Math.min(100, Math.max(1, Number(params.limit))) : 20;
+  const limit = params.limit
+    ? Math.min(100, Math.max(1, Number(params.limit)))
+    : 20;
   const offset = (page - 1) * limit;
 
   const where = [`u.role = 'AGENT'`];
@@ -20,7 +22,7 @@ async function list_agent_products_admin(params = {}) {
     values.push(`%${q}%`, `%${q}%`);
   }
 
-  const where_sql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const where_sql = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
   // COUNT: tidak perlu DISTINCT kalau tidak join ke product_images
   const count_sql = `
@@ -52,6 +54,8 @@ async function list_agent_products_admin(params = {}) {
       p.features,
       p.details,
       p.daily_capacity,
+      p.lat,
+      p.lng,
       p.rating,
       p.is_active,
       p.created_at,
@@ -109,6 +113,8 @@ async function list_agent_products_admin(params = {}) {
     features: safe_json_array(r.features),
     details: safe_json_object(r.details),
     daily_capacity: r.daily_capacity != null ? Number(r.daily_capacity) : null,
+    lat: r.lat,
+    lng: r.lng,
     rating: r.rating != null ? Number(r.rating) : 0,
     is_active: !!r.is_active,
     created_at: r.created_at,
@@ -146,6 +152,8 @@ async function get_agent_product_detail_admin(product_id) {
       p.location,
       p.image_url,
       p.daily_capacity,
+      p.lat,
+      p.lng,
       p.rating,
       p.is_active,
       p.features,
@@ -177,10 +185,12 @@ async function get_agent_product_detail_admin(product_id) {
   `;
   const [imgRows] = await conn.query(imgSql, [product_id]);
 
-  const featuresArr = Array.isArray(row.features) ? row.features : safeJsonParse(row.features, []);
+  const featuresArr = Array.isArray(row.features)
+    ? row.features
+    : safeJsonParse(row.features, []);
 
   const detailsObj =
-    typeof row.details === 'object' && row.details !== null
+    typeof row.details === "object" && row.details !== null
       ? row.details
       : safeJsonParse(row.details, {});
 
@@ -204,7 +214,9 @@ async function get_agent_product_detail_admin(product_id) {
     details: detailsObj,
 
     daily_capacity: row.daily_capacity,
-    rating: row.rating ?? 0,
+    rating: row.rating,
+    lat: row.lat,
+    lng: row.lng,
     is_active: !!row.is_active,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -213,7 +225,7 @@ async function get_agent_product_detail_admin(product_id) {
       id: row.owner_user_id,
       name: row.owner_name,
       email: row.owner_email,
-      avatar_url: row.owner_avatar_url ?? null,
+      avatar_url: row.owner_avatar_url,
     },
   };
 }
@@ -228,14 +240,14 @@ function safe_images_json(v) {
 
   if (Buffer.isBuffer(v)) {
     try {
-      const parsed = JSON.parse(v.toString('utf8'));
+      const parsed = JSON.parse(v.toString("utf8"));
       return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
     }
   }
 
-  if (typeof v === 'string') {
+  if (typeof v === "string") {
     try {
       const parsed = JSON.parse(v);
       return Array.isArray(parsed) ? parsed : [];
@@ -248,19 +260,19 @@ function safe_images_json(v) {
 }
 
 function safe_json_array(v) {
-  if (v == null || v === '') return [];
+  if (v == null || v === "") return [];
   if (Array.isArray(v)) return v;
 
   if (Buffer.isBuffer(v)) {
     try {
-      const parsed = JSON.parse(v.toString('utf8'));
+      const parsed = JSON.parse(v.toString("utf8"));
       return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
     }
   }
 
-  if (typeof v === 'string') {
+  if (typeof v === "string") {
     try {
       const parsed = JSON.parse(v);
       return Array.isArray(parsed) ? parsed : [];
@@ -273,22 +285,27 @@ function safe_json_array(v) {
 }
 
 function safe_json_object(v) {
-  if (v == null || v === '') return {};
-  if (typeof v === 'object' && !Array.isArray(v) && !Buffer.isBuffer(v)) return v;
+  if (v == null || v === "") return {};
+  if (typeof v === "object" && !Array.isArray(v) && !Buffer.isBuffer(v))
+    return v;
 
   if (Buffer.isBuffer(v)) {
     try {
-      const parsed = JSON.parse(v.toString('utf8'));
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+      const parsed = JSON.parse(v.toString("utf8"));
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? parsed
+        : {};
     } catch {
       return {};
     }
   }
 
-  if (typeof v === 'string') {
+  if (typeof v === "string") {
     try {
       const parsed = JSON.parse(v);
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? parsed
+        : {};
     } catch {
       return {};
     }

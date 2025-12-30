@@ -1,4 +1,4 @@
-const conn = require('../configs/db');
+const conn = require("../configs/db");
 
 async function query(sql, params = []) {
   try {
@@ -60,7 +60,7 @@ async function find_product_row_by_id(product_id) {
     WHERE p.id = ?
     LIMIT 1
     `,
-    [product_id],
+    [product_id]
   );
 
   return rows?.[0] ?? null;
@@ -75,7 +75,7 @@ async function find_product_images(product_id) {
       WHERE product_id = ?
       ORDER BY sort_order ASC, id ASC
     `,
-    [product_id],
+    [product_id]
   );
 
   return rows.map((r) => r.image_url);
@@ -90,7 +90,7 @@ async function find_product_blocked_dates(product_id) {
       WHERE product_id = ?
       ORDER BY blocked_date ASC
     `,
-    [product_id],
+    [product_id]
   );
 
   return rows.map((r) => r.blocked_date);
@@ -140,8 +140,10 @@ async function create_product(payload) {
         image_url,
         features,
         details,
-        daily_capacity
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        daily_capacity,
+        lat,
+        lng
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
     `,
     [
       payload.owner_id,
@@ -155,32 +157,38 @@ async function create_product(payload) {
       payload.features ? JSON.stringify(payload.features) : null,
       payload.details ? JSON.stringify(payload.details) : null,
       payload.daily_capacity,
-    ],
+      payload.lat,
+      payload.lng,
+    ]
   );
 
   const product_id = result.insertId;
 
-  if (payload.images.length > 0) {
+  // images
+  if (Array.isArray(payload.images) && payload.images.length > 0) {
     for (let i = 0; i < payload.images.length; i += 1) {
-      const img = payload.images[i];
       await query(
         `
           INSERT INTO product_images (product_id, image_url, sort_order)
           VALUES (?,?,?)
         `,
-        [product_id, img, i],
+        [product_id, payload.images[i], i]
       );
     }
   }
 
-  if (payload.blocked_dates.length > 0) {
+  // blocked dates
+  if (
+    Array.isArray(payload.blocked_dates) &&
+    payload.blocked_dates.length > 0
+  ) {
     for (const date of payload.blocked_dates) {
       await query(
         `
           INSERT IGNORE INTO product_blocked_dates (product_id, blocked_date)
           VALUES (?,?)
         `,
-        [product_id, date],
+        [product_id, date]
       );
     }
   }
@@ -194,8 +202,8 @@ async function update_product(product_id, owner_id, payload) {
   if (!existing) return null;
 
   if (Number(existing.owner_id) !== Number(owner_id)) {
-    const err = new Error('Forbidden');
-    err.code = 'FORBIDDEN';
+    const err = new Error("Forbidden");
+    err.code = "FORBIDDEN";
     throw err;
   }
 
@@ -207,21 +215,24 @@ async function update_product(product_id, owner_id, payload) {
     values.push(val);
   };
 
-  if (payload.category_id !== undefined) set('category_id', payload.category_id);
-  if (payload.name !== undefined) set('name', payload.name);
-  if (payload.description !== undefined) set('description', payload.description);
-  if (payload.price !== undefined) set('price', payload.price);
-  if (payload.currency !== undefined) set('currency', payload.currency);
-  if (payload.location !== undefined) set('location', payload.location);
-  if (payload.image_url !== undefined) set('image_url', payload.image_url);
-  if (payload.daily_capacity !== undefined) set('daily_capacity', payload.daily_capacity);
+  if (payload.category_id !== undefined)
+    set("category_id", payload.category_id);
+  if (payload.name !== undefined) set("name", payload.name);
+  if (payload.description !== undefined)
+    set("description", payload.description);
+  if (payload.price !== undefined) set("price", payload.price);
+  if (payload.currency !== undefined) set("currency", payload.currency);
+  if (payload.location !== undefined) set("location", payload.location);
+  if (payload.image_url !== undefined) set("image_url", payload.image_url);
+  if (payload.daily_capacity !== undefined)
+    set("daily_capacity", payload.daily_capacity);
 
   if (payload.features !== undefined) {
-    set('features', payload.features ? JSON.stringify(payload.features) : null);
+    set("features", payload.features ? JSON.stringify(payload.features) : null);
   }
 
   if (payload.details !== undefined) {
-    set('details', payload.details ? JSON.stringify(payload.details) : null);
+    set("details", payload.details ? JSON.stringify(payload.details) : null);
   }
 
   if (fields.length > 0) {
@@ -229,7 +240,7 @@ async function update_product(product_id, owner_id, payload) {
 
     const sql = `
       UPDATE products
-      SET ${fields.join(', ')}
+      SET ${fields.join(", ")}
       WHERE id = ? AND owner_id = ?
     `;
 
@@ -238,7 +249,9 @@ async function update_product(product_id, owner_id, payload) {
 
   // images (replace only if sent)
   if (Array.isArray(payload.images)) {
-    await query(`DELETE FROM product_images WHERE product_id = ?`, [product_id]);
+    await query(`DELETE FROM product_images WHERE product_id = ?`, [
+      product_id,
+    ]);
 
     for (let i = 0; i < payload.images.length; i += 1) {
       await query(
@@ -246,14 +259,16 @@ async function update_product(product_id, owner_id, payload) {
           INSERT INTO product_images (product_id, image_url, sort_order)
           VALUES (?,?,?)
         `,
-        [product_id, payload.images[i], i],
+        [product_id, payload.images[i], i]
       );
     }
   }
 
   // blocked_dates (replace only if sent)
   if (Array.isArray(payload.blocked_dates)) {
-    await query(`DELETE FROM product_blocked_dates WHERE product_id = ?`, [product_id]);
+    await query(`DELETE FROM product_blocked_dates WHERE product_id = ?`, [
+      product_id,
+    ]);
 
     for (const date of payload.blocked_dates) {
       await query(
@@ -261,7 +276,7 @@ async function update_product(product_id, owner_id, payload) {
           INSERT IGNORE INTO product_blocked_dates (product_id, blocked_date)
           VALUES (?,?)
         `,
-        [product_id, date],
+        [product_id, date]
       );
     }
   }
@@ -275,18 +290,20 @@ async function delete_product_for_owner(product_id, owner_id) {
   if (!existing) return null;
 
   if (Number(existing.owner_id) !== Number(owner_id)) {
-    const err = new Error('Forbidden');
-    err.code = 'FORBIDDEN';
+    const err = new Error("Forbidden");
+    err.code = "FORBIDDEN";
     throw err;
   }
 
   await query(`DELETE FROM product_images WHERE product_id = ?`, [product_id]);
-  await query(`DELETE FROM product_blocked_dates WHERE product_id = ?`, [product_id]);
-
-  const res = await query(`DELETE FROM products WHERE id = ? AND owner_id = ?`, [
+  await query(`DELETE FROM product_blocked_dates WHERE product_id = ?`, [
     product_id,
-    owner_id,
   ]);
+
+  const res = await query(
+    `DELETE FROM products WHERE id = ? AND owner_id = ?`,
+    [product_id, owner_id]
+  );
 
   return { affected_rows: res.affectedRows || 0 };
 }
@@ -344,7 +361,7 @@ async function list_products_by_owner(owner_id) {
     WHERE p.owner_id = ?
     ORDER BY p.created_at DESC
     `,
-    [oid],
+    [oid]
   );
 
   return rows.map((row) => {
@@ -356,7 +373,8 @@ async function list_products_by_owner(owner_id) {
     const features = Array.isArray(featuresRaw) ? featuresRaw : [];
 
     const detailsRaw = safeJsonParse(row.details, {});
-    const details = typeof detailsRaw === 'object' && detailsRaw !== null ? detailsRaw : {};
+    const details =
+      typeof detailsRaw === "object" && detailsRaw !== null ? detailsRaw : {};
 
     return {
       id: row.id,
@@ -396,14 +414,14 @@ function safeJsonParse(v, fallback) {
 
   if (Buffer.isBuffer(v)) {
     try {
-      return JSON.parse(v.toString('utf8'));
+      return JSON.parse(v.toString("utf8"));
     } catch {
       return fallback;
     }
   }
 
-  if (typeof v === 'object') return v;
-  if (typeof v !== 'string') return fallback;
+  if (typeof v === "object") return v;
+  if (typeof v !== "string") return fallback;
 
   try {
     return JSON.parse(v);
@@ -466,7 +484,7 @@ async function get_product_by_id_for_owner(product_id, owner_id) {
     WHERE p.id = ? AND p.owner_id = ?
     LIMIT 1
     `,
-    [pid, oid],
+    [pid, oid]
   );
 
   const row = rows?.[0];
@@ -479,7 +497,8 @@ async function get_product_by_id_for_owner(product_id, owner_id) {
   const features = Array.isArray(featuresRaw) ? featuresRaw : [];
 
   const detailsRaw = safeJsonParse(row.details, {});
-  const details = typeof detailsRaw === 'object' && detailsRaw !== null ? detailsRaw : {};
+  const details =
+    typeof detailsRaw === "object" && detailsRaw !== null ? detailsRaw : {};
 
   return {
     id: row.id,
@@ -524,7 +543,7 @@ async function list_product_images_for_owner(product_id, owner_id) {
       WHERE product_id = ?
       ORDER BY sort_order ASC, id ASC
     `,
-    [product_id],
+    [product_id]
   );
 
   return rows || [];
@@ -533,15 +552,17 @@ async function list_product_images_for_owner(product_id, owner_id) {
 async function add_product_image_for_owner(product_id, owner_id, payload) {
   await ensure_owned_product(product_id, owner_id);
 
-  const image_url = typeof payload?.image_url === 'string' ? payload.image_url.trim() : '';
+  const image_url =
+    typeof payload?.image_url === "string" ? payload.image_url.trim() : "";
   const sort_order =
-    typeof payload?.sort_order === 'number' && Number.isFinite(payload.sort_order)
+    typeof payload?.sort_order === "number" &&
+    Number.isFinite(payload.sort_order)
       ? payload.sort_order
       : 0;
 
   if (!image_url) {
-    const err = new Error('image_url is required');
-    err.code = 'VALIDATION';
+    const err = new Error("image_url is required");
+    err.code = "VALIDATION";
     throw err;
   }
 
@@ -550,7 +571,7 @@ async function add_product_image_for_owner(product_id, owner_id, payload) {
       INSERT INTO product_images (product_id, image_url, sort_order)
       VALUES (?,?,?)
     `,
-    [product_id, image_url, sort_order],
+    [product_id, image_url, sort_order]
   );
 
   return {
@@ -565,8 +586,8 @@ async function add_product_images_bulk_for_owner(product_id, owner_id, images) {
   await ensure_owned_product(product_id, owner_id);
 
   if (!Array.isArray(images) || images.length === 0) {
-    const err = new Error('images is required');
-    err.code = 'VALIDATION';
+    const err = new Error("images is required");
+    err.code = "VALIDATION";
     throw err;
   }
 
@@ -575,9 +596,10 @@ async function add_product_images_bulk_for_owner(product_id, owner_id, images) {
   for (let i = 0; i < images.length; i += 1) {
     const item = images[i];
 
-    const image_url = typeof item?.image_url === 'string' ? item.image_url.trim() : '';
+    const image_url =
+      typeof item?.image_url === "string" ? item.image_url.trim() : "";
     const sort_order =
-      typeof item?.sort_order === 'number' && Number.isFinite(item.sort_order)
+      typeof item?.sort_order === "number" && Number.isFinite(item.sort_order)
         ? item.sort_order
         : i;
 
@@ -588,7 +610,7 @@ async function add_product_images_bulk_for_owner(product_id, owner_id, images) {
         INSERT INTO product_images (product_id, image_url, sort_order)
         VALUES (?,?,?)
       `,
-      [product_id, image_url, sort_order],
+      [product_id, image_url, sort_order]
     );
 
     inserted.push({
@@ -602,38 +624,46 @@ async function add_product_images_bulk_for_owner(product_id, owner_id, images) {
   return inserted;
 }
 
-async function update_product_image_for_owner(product_id, owner_id, image_id, payload) {
+async function update_product_image_for_owner(
+  product_id,
+  owner_id,
+  image_id,
+  payload
+) {
   await ensure_owned_product(product_id, owner_id);
 
   const id = Number(image_id);
   if (!id) {
-    const err = new Error('image_id is invalid');
-    err.code = 'VALIDATION';
+    const err = new Error("image_id is invalid");
+    err.code = "VALIDATION";
     throw err;
   }
 
   const sets = [];
   const params = [];
 
-  if (typeof payload?.image_url === 'string') {
+  if (typeof payload?.image_url === "string") {
     const image_url = payload.image_url.trim();
     if (!image_url) {
-      const err = new Error('image_url cannot be empty');
-      err.code = 'VALIDATION';
+      const err = new Error("image_url cannot be empty");
+      err.code = "VALIDATION";
       throw err;
     }
-    sets.push('image_url = ?');
+    sets.push("image_url = ?");
     params.push(image_url);
   }
 
-  if (typeof payload?.sort_order === 'number' && Number.isFinite(payload.sort_order)) {
-    sets.push('sort_order = ?');
+  if (
+    typeof payload?.sort_order === "number" &&
+    Number.isFinite(payload.sort_order)
+  ) {
+    sets.push("sort_order = ?");
     params.push(payload.sort_order);
   }
 
   if (sets.length === 0) {
-    const err = new Error('No fields to update');
-    err.code = 'VALIDATION';
+    const err = new Error("No fields to update");
+    err.code = "VALIDATION";
     throw err;
   }
 
@@ -642,10 +672,10 @@ async function update_product_image_for_owner(product_id, owner_id, image_id, pa
   const res = await query(
     `
       UPDATE product_images
-      SET ${sets.join(', ')}
+      SET ${sets.join(", ")}
       WHERE product_id = ? AND id = ?
     `,
-    params,
+    params
   );
 
   return { affected_rows: res.affectedRows || 0 };
@@ -656,8 +686,8 @@ async function delete_product_image_for_owner(product_id, owner_id, image_id) {
 
   const id = Number(image_id);
   if (!id) {
-    const err = new Error('image_id is invalid');
-    err.code = 'VALIDATION';
+    const err = new Error("image_id is invalid");
+    err.code = "VALIDATION";
     throw err;
   }
 
@@ -666,7 +696,7 @@ async function delete_product_image_for_owner(product_id, owner_id, image_id) {
       DELETE FROM product_images
       WHERE product_id = ? AND id = ?
     `,
-    [product_id, id],
+    [product_id, id]
   );
 
   return { affected_rows: res.affectedRows || 0 };
@@ -676,8 +706,8 @@ async function reorder_product_images_for_owner(product_id, owner_id, order) {
   await ensure_owned_product(product_id, owner_id);
 
   if (!Array.isArray(order) || order.length === 0) {
-    const err = new Error('order is required');
-    err.code = 'VALIDATION';
+    const err = new Error("order is required");
+    err.code = "VALIDATION";
     throw err;
   }
 
@@ -696,7 +726,7 @@ async function reorder_product_images_for_owner(product_id, owner_id, order) {
         SET sort_order = ?
         WHERE product_id = ? AND id = ?
       `,
-      [sort_order, product_id, id],
+      [sort_order, product_id, id]
     );
 
     touched += res.affectedRows || 0;
