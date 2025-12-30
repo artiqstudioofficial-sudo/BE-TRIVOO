@@ -1,4 +1,4 @@
-const conn = require("../configs/db");
+const conn = require('../configs/db');
 
 async function query(sql, params = []) {
   try {
@@ -28,7 +28,7 @@ async function find_product_row_by_id(product_id) {
       WHERE p.id = ?
       LIMIT 1
     `,
-    [product_id]
+    [product_id],
   );
 
   return rows[0] || null;
@@ -43,7 +43,7 @@ async function find_product_images(product_id) {
       WHERE product_id = ?
       ORDER BY sort_order ASC, id ASC
     `,
-    [product_id]
+    [product_id],
   );
 
   return rows.map((r) => r.image_url);
@@ -58,7 +58,7 @@ async function find_product_blocked_dates(product_id) {
       WHERE product_id = ?
       ORDER BY blocked_date ASC
     `,
-    [product_id]
+    [product_id],
   );
 
   return rows.map((r) => r.blocked_date);
@@ -123,7 +123,7 @@ async function create_product(payload) {
       payload.features ? JSON.stringify(payload.features) : null,
       payload.details ? JSON.stringify(payload.details) : null,
       payload.daily_capacity || 10,
-    ]
+    ],
   );
 
   const product_id = result.insertId;
@@ -136,22 +136,19 @@ async function create_product(payload) {
           INSERT INTO product_images (product_id, image_url, sort_order)
           VALUES (?,?,?)
         `,
-        [product_id, img, i]
+        [product_id, img, i],
       );
     }
   }
 
-  if (
-    Array.isArray(payload.blocked_dates) &&
-    payload.blocked_dates.length > 0
-  ) {
+  if (Array.isArray(payload.blocked_dates) && payload.blocked_dates.length > 0) {
     for (const date of payload.blocked_dates) {
       await query(
         `
           INSERT IGNORE INTO product_blocked_dates (product_id, blocked_date)
           VALUES (?,?)
         `,
-        [product_id, date]
+        [product_id, date],
       );
     }
   }
@@ -165,8 +162,8 @@ async function update_product(product_id, owner_id, payload) {
   if (!existing) return null;
 
   if (Number(existing.owner_id) !== Number(owner_id)) {
-    const err = new Error("Forbidden");
-    err.code = "FORBIDDEN";
+    const err = new Error('Forbidden');
+    err.code = 'FORBIDDEN';
     throw err;
   }
 
@@ -200,7 +197,7 @@ async function update_product(product_id, owner_id, payload) {
       payload.daily_capacity || 10,
       product_id,
       owner_id,
-    ]
+    ],
   );
 
   await query(`DELETE FROM product_images WHERE product_id = ?`, [product_id]);
@@ -212,25 +209,20 @@ async function update_product(product_id, owner_id, payload) {
           INSERT INTO product_images (product_id, image_url, sort_order)
           VALUES (?,?,?)
         `,
-        [product_id, img, i]
+        [product_id, img, i],
       );
     }
   }
 
-  await query(`DELETE FROM product_blocked_dates WHERE product_id = ?`, [
-    product_id,
-  ]);
-  if (
-    Array.isArray(payload.blocked_dates) &&
-    payload.blocked_dates.length > 0
-  ) {
+  await query(`DELETE FROM product_blocked_dates WHERE product_id = ?`, [product_id]);
+  if (Array.isArray(payload.blocked_dates) && payload.blocked_dates.length > 0) {
     for (const date of payload.blocked_dates) {
       await query(
         `
           INSERT IGNORE INTO product_blocked_dates (product_id, blocked_date)
           VALUES (?,?)
         `,
-        [product_id, date]
+        [product_id, date],
       );
     }
   }
@@ -267,7 +259,7 @@ async function list_products_by_owner(owner_id) {
       WHERE p.owner_id = ?
       ORDER BY p.created_at DESC
     `,
-    [owner_id]
+    [owner_id],
   );
 
   return rows.map((row) => ({
